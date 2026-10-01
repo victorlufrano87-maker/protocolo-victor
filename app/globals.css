@@ -104,3 +104,7 @@ nav button{display:flex;flex-direction:column;align-items:center;gap:3px}
 @keyframes fall{to{top:110%;transform:rotate(720deg)}}
 .party{position:absolute;top:38%;left:0;right:0;text-align:center;font-family:var(--display);font-size:46px;text-transform:uppercase;color:var(--ok);animation:pop .4s ease-out}
 @media (prefers-reduced-motion:reduce){.confetti i,.toast,.party{animation:none}}
+
+.nav-ic{position:relative;display:inline-flex}
+.badge{position:absolute;top:-6px;right:-10px;min-width:18px;height:18px;border-radius:9px;background:var(--warn);color:#2a1700;font:700 11px var(--body);font-style:normal;display:grid;place-items:center;padding:0 4px}
+.chip.picked{background:rgba(255,174,61,.15);border-color:var(--warn)}

@@ -28,6 +28,7 @@ const I = {
   plan: <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7" />,
   check: <path d="m5 12 5 5 9-10" />,
   dumbbell: <path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12" />,
+  cart: <path d="M3 4h2l2.5 11h11L21 7H6.5M9 20h.01M17 20h.01" />,
   ext: <path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" />,
 };
 const Icon = ({ n, s = 20 }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{I[n]}</svg>;
@@ -113,6 +114,12 @@ function App({ uid }) {
   }
 
   const s = score(log);
+  const shopCount = (settings.supplies?._shop || []).length;
+  async function addShop(name) {
+    const list = settings.supplies?._shop || [];
+    if (list.some((x) => x.toLowerCase() === name.toLowerCase())) { say("Já está na lista"); return; }
+    await saveSettings({ supplies: { ...settings.supplies, _shop: [...list, name] } }); buzz(); say(`${name} na lista de compras`);
+  }
   return (
     <div className="wrap">
       <header className="top">
@@ -126,18 +133,19 @@ function App({ uid }) {
 
       {tab === "hoje" && <Today {...{ log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings }} />}
-      {tab === "trocas" && <SubsTable />}
+      {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ settings, saveSettings }} />}
 
-      {swapFor && <SwapSheet {...swapFor} current={log.swaps?.[swapFor.key]} onClose={() => setSwapFor(null)}
+      {swapFor && <SwapSheet {...swapFor} addShop={addShop} current={log.swaps?.[swapFor.key]} onClose={() => setSwapFor(null)}
         onPick={(v) => { const swaps = { ...log.swaps }; if (v) swaps[swapFor.key] = v; else delete swaps[swapFor.key]; saveLog({ swaps }); setSwapFor(null); say(v ? "Alimento trocado" : "Voltou ao original"); }} />}
 
       {toast && <div className="toast" role="status">{toast}</div>}
       {party && <Confetti />}
 
       <nav>
-        {[["hoje", "Hoje", "today"], ["prog", "Progresso", "prog"], ["trocas", "Trocas", "swap"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
-          <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); scrollTo(0, 0); }}><Icon n={ic} s={22} /><span>{l}</span></button>)}
+        {[["hoje", "Hoje", "today"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
+          <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); scrollTo(0, 0); }}>
+            <span className="nav-ic"><Icon n={ic} s={22} />{k === "compras" && shopCount > 0 && <i className="badge">{shopCount}</i>}</span><span>{l}</span></button>)}
       </nav>
     </div>
   );
@@ -330,7 +338,7 @@ function Items({ m, checks, swaps, toggle, setSwapFor }) {
   });
 }
 
-function SwapSheet({ item, current, onPick, onClose }) {
+function SwapSheet({ item, current, onPick, onClose, addShop }) {
   const g = GROUPS[item.g];
   const [q, setQ] = useState("");
   const foods = g.foods.filter((f) => f.n.toLowerCase().includes(q.toLowerCase()));
@@ -340,6 +348,7 @@ function SwapSheet({ item, current, onPick, onClose }) {
         <div className="grab" />
         <div className="mh"><h2>Trocar alimento</h2><button className="sm" onClick={onClose}>Fechar</button></div>
         <div className="tag">Trocando <b style={{ color: "var(--fg)" }}>{item.t}</b>. Quantidades já ajustadas para {item.p === 0.5 ? "½ porção" : `${item.p} porç${item.p > 1 ? "ões" : "ão"}`} do grupo {g.name.toLowerCase()}.</div>
+        {item.shop && <button onClick={() => { addShop(item.shop[0]); onClose(); }}><Icon n="cart" s={16} /> Acabou: pôr {item.shop[0]} na lista</button>}
         <input id="swapq" placeholder="Buscar alimento" value={q} onChange={(e) => setQ(e.target.value)} />
         {current && <button onClick={() => onPick(null)}>Voltar ao original</button>}
         {foods.map((f) => {
@@ -545,12 +554,7 @@ function Plan({ settings, saveSettings }) {
         })}
       </div>
 
-      <div className="card">
-        <div className="mh"><h2>Lista de compras</h2><span className="tag">por semana</span></div>
-        <div className="row tag">Treinos/semana <input id="trn" type="number" min="0" max="7" value={trainings} onChange={(e) => setTrainings(+e.target.value)} style={{ width: 70 }} /></div>
-        <table><tbody>{shop.map(([n, { q, u }]) => <tr key={n}><td>{n}</td><td className="q">{fmtQ(q, u)}</td></tr>)}</tbody></table>
-        <div className="tag">Arroz e feijão em peso cozido. Mais Ômega 3 (3 g/dia), Centrum e cápsulas.</div>
-      </div>
+      <SubsTable />
 
       <div className="card">
         <h2>Regras do plano</h2>
@@ -558,6 +562,83 @@ function Plan({ settings, saveSettings }) {
       </div>
 
       <button onClick={() => supabase.auth.signOut()}>Sair</button>
+    </>
+  );
+}
+
+/* ---------- COMPRAS ---------- */
+const SUP_ITEMS = ["Ômega 3", "Cápsula 1 (manhã)", "Cápsula 2 (jantar)", "Creatina", "Centrum Adulto", "Whey concentrado"];
+const FOOD_ITEMS = [...new Set(MEALS.flatMap((m) => m.items.filter((it) => it.shop).map((it) => it.shop[0])))].filter((n) => n !== "Whey concentrado");
+
+function Shopping({ settings, saveSettings, say }) {
+  const list = settings.supplies?._shop || [];
+  const [txt, setTxt] = useState("");
+  const [trainings, setTrainings] = useState(5);
+  const save = (l) => saveSettings({ supplies: { ...settings.supplies, _shop: l } });
+  const add = (n) => { n = n.trim(); if (!n) return; if (list.some((x) => x.toLowerCase() === n.toLowerCase())) return say("Já está na lista"); buzz(); save([...list, n]); };
+  const bought = (n) => { buzz(30); save(list.filter((x) => x !== n)); say(`${n} comprado`); };
+  const [copied, setCopied] = useState(false);
+  const text = "Lista de compras:\n" + list.map((n) => "• " + n).join("\n");
+  const canShare = typeof navigator !== "undefined" && !!navigator.share;
+  async function copyList() {
+    try { await navigator.clipboard.writeText(text); }
+    catch { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+    buzz(30); setCopied(true); setTimeout(() => setCopied(false), 2000);
+  }
+  async function shareList() { try { await navigator.share({ title: "Lista de compras", text }); } catch {} }
+
+  const week = useMemo(() => {
+    const acc = {};
+    MEALS.forEach((m) => m.items.forEach((it) => {
+      if (!it.shop) return; const [n, q, u] = it.shop; const mult = m.workout ? trainings : 7;
+      acc[n] = acc[n] || { q: 0, u }; acc[n].q += q * mult;
+    }));
+    acc["Creatina"] = { q: 42, u: "g" };
+    return Object.entries(acc);
+  }, [trainings]);
+  const fmtQ = (q, u) => u === "g" && q >= 1000 ? `${(q / 1000).toFixed(2).replace(".", ",")} kg` : `${q} ${u}`;
+
+  const Quick = ({ title, items }) => (
+    <div className="card">
+      <h3>{title}</h3>
+      <div className="chips">{items.map((n) => {
+        const inList = list.includes(n);
+        return <button key={n} className={"chip" + (inList ? " picked" : "")} onClick={() => inList ? bought(n) : add(n)}><b>{n}</b></button>;
+      })}</div>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="card">
+        <div className="mh"><h2>Para comprar</h2><span className="tag num">{list.length} {list.length === 1 ? "item" : "itens"}</span></div>
+        {list.length > 0 && <div className="row">
+          <button className="pri grow big" onClick={copyList}>{copied ? "Copiado ✓" : "Copiar lista"}</button>
+          {canShare && <button className="ok grow big" onClick={shareList}>Enviar</button>}
+        </div>}
+        {list.length === 0 ? <div className="tag">Nada na lista. Quando algo acabar, toque nele abaixo.</div> :
+          list.map((n) => (
+            <div key={n} className="item">
+              <button className="ck" aria-label={"Comprei " + n} onClick={() => bought(n)} />
+              <div className="t" onClick={() => bought(n)}><b>{n}</b></div>
+            </div>
+          ))}
+        <div className="row">
+          <input id="shopadd" placeholder="Adicionar outro item" value={txt} onChange={(e) => setTxt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { add(txt); setTxt(""); } }} style={{ flex: 1, minWidth: 0 }} />
+          <button className="pri" onClick={() => { add(txt); setTxt(""); }}>Adicionar</button>
+        </div>
+      </div>
+
+      <div className="tag">O que acabou? Toque para pôr na lista (toque de novo para tirar).</div>
+      <Quick title="Suplementos" items={SUP_ITEMS} />
+      <Quick title="Alimentos da dieta" items={FOOD_ITEMS} />
+
+      <div className="card">
+        <div className="mh"><h3>Quantidade por semana</h3><span className="tag">referência</span></div>
+        <div className="row tag">Treinos/semana <input id="trn" type="number" min="0" max="7" value={trainings} onChange={(e) => setTrainings(+e.target.value)} style={{ width: 70 }} /></div>
+        <table><tbody>{week.map(([n, { q, u }]) => <tr key={n}><td>{n}</td><td className="q">{fmtQ(q, u)}</td></tr>)}</tbody></table>
+        <div className="tag">Arroz e feijão em peso cozido. Mais Ômega 3 (3 g/dia), Centrum e cápsulas.</div>
+      </div>
     </>
   );
 }
