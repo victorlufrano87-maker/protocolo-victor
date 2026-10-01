@@ -39,11 +39,15 @@ export async function GET(req) {
         continue;
       }
       const t = toMin(times[m.id] || m.time);
-      const sups = m.items.filter((x) => x.sup).map((x) => x.t.replace(/\s*\(.*\)/, "")).join(", ");
+      const swaps = log?.swaps || {};
+      const pend = m.items.map((x, i) => ({ x, k: `${m.id}-${i}` })).filter(({ k }) => !checks[k]);
+      const foods = pend.filter(({ x }) => !x.sup).map(({ x, k }) => (swaps[k] || x.t).replace(/ \(.*\)$/, "")).join(" · ");
+      const sups = pend.filter(({ x }) => x.sup).map(({ x }) => x.short || x.t).join(", ");
+      const body = [foods, sups && `💊 ${sups}`].filter(Boolean).join("\n");
       if (min >= t && min < t + 15 && !done)
-        msgs.push([`${m.id}-on`, `Hora do ${m.name}`, sups ? `Não esqueça: ${sups}` : "Toque para ver o que comer."]);
+        msgs.push([`${m.id}-on`, `${times[m.id] || m.time} · ${m.name}`, body]);
       if (min >= t + 45 && min < t + 60 && !done)
-        msgs.push([`${m.id}-late`, `${m.name} ainda pendente`, "Se perdeu, una com a próxima refeição (mas não com frequência)."]);
+        msgs.push([`${m.id}-late`, `${m.name} ainda pendente`, `Falta: ${body}`]);
     }
 
     // treino: lembrete no horário, se ainda não marcou
