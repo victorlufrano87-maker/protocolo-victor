@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { RECIPES } from "@/lib/recipes";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
-import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
+import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
 
 const EMPTY = { checks: {}, swaps: {}, water_ml: 0, free_meal: false, workout_at: null };
 const CUP = 250, CUPS = Math.ceil(WATER_GOAL / CUP);
@@ -11,6 +12,7 @@ const score = dayScore;
 const fmtPortion = (p, measure) => p === 1 ? measure : p === 0.5 ? `½ de ${measure}` : `${p}× ${measure}`;
 const b64ToU8 = (b) => { const p = "=".repeat((4 - (b.length % 4)) % 4); const r = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
 const buzz = (ms = 15) => { try { navigator.vibrate?.(ms); } catch {} };
+const fmtHM = (m) => `${String(Math.floor((m % 1440) / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const fmtDur = (min) => { const a = Math.abs(min); return a < 60 ? `${a} min` : `${Math.floor(a / 60)}h${a % 60 ? String(a % 60).padStart(2, "0") : ""}`; };
 const mealDone = (m, checks) => m.items.every((_, i) => checks[`${m.id}-${i}`]);
 
@@ -63,8 +65,9 @@ function Login() {
 
 function App({ uid }) {
   const [tab, setTab] = useState("hoje");
-  const [day, setDay] = useState(spNow().day);
-  const [now, setNow] = useState(spNow().min);
+  const [today, setToday] = useState(spNow().day);
+  const [nowMin, setNow] = useState(spNow().min);
+  const [viewDay, setViewDay] = useState(null);
   const [log, setLog] = useState(EMPTY);
   const [week, setWeek] = useState({});
   const [settings, setSettings] = useState({ times: {}, update_date: null, supplies: {} });
@@ -72,21 +75,32 @@ function App({ uid }) {
   const [toast, setToast] = useState(null);
   const [party, setParty] = useState(false);
 
+  const timesRef = useRef({});
+  const tick = () => { const e = effectiveNow(spNow(), timesRef.current, addDays); setToday(e.day); setNow(e.min); return e; };
   const load = useCallback(async () => {
-    const d = spNow().day; setDay(d); setNow(spNow().min);
-    const [{ data: logs }, { data: st }] = await Promise.all([
-      supabase.from("day_logs").select("*").eq("user_id", uid).gte("day", addDays(d, -29)),
-      supabase.from("settings").select("*").eq("user_id", uid).maybeSingle(),
-    ]);
+    const { data: st } = await supabase.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    if (st) { setSettings(st); timesRef.current = st.times || {}; }
+    const e = tick();
+    const { data: logs } = await supabase.from("day_logs").select("*").eq("user_id", uid).gte("day", addDays(e.day, -119));
     const map = Object.fromEntries((logs || []).map((l) => [l.day, l]));
-    setWeek(map); setLog(map[d] || EMPTY);
-    if (st) setSettings(st);
+    setWeek(map);
+    // atalho da Siri: ?agua=250
+    const q = new URLSearchParams(location.search).get("agua");
+    if (q && +q > 0) {
+      const cur = map[e.day] || EMPTY, nx = { ...cur, water_ml: (cur.water_ml || 0) + +q };
+      map[e.day] = nx; setWeek({ ...map });
+      await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: nx.checks || {}, swaps: nx.swaps || {}, water_ml: nx.water_ml, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
+      history.replaceState(null, "", "/"); setToast(`+${q} ml de água`); setTimeout(() => setToast(null), 2500);
+    }
   }, [uid]);
+  const day = viewDay || today;
+  const now = viewDay ? 24 * 60 : nowMin;
+  useEffect(() => { setLog(week[day] || EMPTY); }, [week, day]);
   useEffect(() => {
     load();
     const f = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", f);
-    const t = setInterval(() => setNow(spNow().min), 30000);
+    const t = setInterval(tick, 30000);
     return () => { document.removeEventListener("visibilitychange", f); clearInterval(t); };
   }, [load]);
 
@@ -94,7 +108,7 @@ function App({ uid }) {
 
   async function saveLog(patch) {
     const before = score(log);
-    const next = { ...log, ...patch }; setLog(next); setWeek((w) => ({ ...w, [day]: next }));
+    const next = { ...log, ...patch }; setWeek((w) => ({ ...w, [day]: next }));
     if (patch.checks) {
       const m = MEALS.find((m) => !mealDone(m, log.checks) && mealDone(m, next.checks));
       if (m) { buzz(40); say(`${m.name} completo`); }
@@ -103,7 +117,7 @@ function App({ uid }) {
     await supabase.from("day_logs").upsert({ user_id: uid, day, checks: next.checks, swaps: next.swaps, water_ml: next.water_ml, free_meal: next.free_meal, workout_at: next.workout_at, updated_at: new Date().toISOString() });
   }
   async function saveSettings(patch) {
-    const next = { ...settings, ...patch }; setSettings(next);
+    const next = { ...settings, ...patch }; setSettings(next); timesRef.current = next.times || {};
     await supabase.from("settings").upsert({ user_id: uid, times: next.times, update_date: next.update_date, supplies: next.supplies });
   }
 
@@ -114,21 +128,35 @@ function App({ uid }) {
     if (list.some((x) => x.toLowerCase() === name.toLowerCase())) { say("Já está na lista"); return; }
     await saveSettings({ supplies: { ...settings.supplies, _shop: [...list, name] } }); buzz(); say(`${name} na lista de compras`);
   }
+  // estoque baixo entra sozinho na lista de compras
+  useEffect(() => {
+    const list = settings.supplies?._shop || [], stock = settings.supplies?._stock || {}, added = [];
+    SUPPLIES.forEach((s) => { const r = stockLeft(s, stock[s.id], today); if (r && r.days <= 5 && !list.includes(s.shop) && stock[s.id]?.auto !== today) added.push(s); });
+    if (added.length) {
+      const st2 = { ...stock }; added.forEach((s) => { st2[s.id] = { ...st2[s.id], auto: today }; });
+      saveSettings({ supplies: { ...settings.supplies, _shop: [...list, ...added.map((s) => s.shop)], _stock: st2 } });
+    }
+  }, [settings.supplies, today]); // eslint-disable-line
   return (
     <div className="wrap">
       <header className="top">
         <Ring pct={s} />
         <div style={{ minWidth: 0 }}>
-          <div className="lbl">{fmtDay(day, { weekday: "long", day: "2-digit", month: "long" })}</div>
+          <div className="daynav">
+            <button aria-label="Dia anterior" onClick={() => setViewDay(addDays(day, -1) < addDays(today, -6) ? day : addDays(day, -1))}>‹</button>
+            <span className="lbl">{fmtDay(day, { weekday: "long", day: "2-digit", month: "long" })}</span>
+            {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
+          </div>
           <h1>Protocolo Victor</h1>
           <div className="tag">{s === 100 ? "Dia 100% cumprido" : "Dr. Victor Rocha · 2.239 kcal · 199 g PTN"}</div>
         </div>
       </header>
 
+      {viewDay && tab === "hoje" && <div className="card editing"><span>Editando <b>{fmtDay(day, { weekday: "long", day: "2-digit", month: "2-digit" })}</b></span><button className="sm pri" onClick={() => setViewDay(null)}>Voltar para hoje</button></div>}
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings, onRefresh: load }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
-      {tab === "plano" && <Plan {...{ settings, saveSettings }} />}
+      {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
       {swapFor && <SwapSheet {...swapFor} addShop={addShop} current={log.swaps?.[swapFor.key]} onClose={() => setSwapFor(null)}
         onPick={(v) => { const swaps = { ...log.swaps }; if (v) swaps[swapFor.key] = v; else delete swaps[swapFor.key]; saveLog({ swaps }); setSwapFor(null); say(v ? "Alimento trocado" : "Voltou ao original"); }} />}
@@ -202,6 +230,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const sups = meals.flatMap((m) => m.items.map((it, i) => ({ it, k: `${m.id}-${i}`, time: merge[m.id] && merge[m.id] !== "skip" ? tOf(MEALS.find((x) => x.id === merge[m.id])) : tOf(m) })).filter((x) => x.it.sup))
     .sort((a, b) => toMin(a.time) - toMin(b.time));
 
+  const bottle = +(T.bottle || 500);
   // cafeína
   const caf = checks._caf || [];
   const cafTotal = caf.reduce((a, b) => a + b, 0);
@@ -244,7 +273,8 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       })}
 
       {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
-          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)} />
+          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
+          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { ...checks, _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
 
       {/* Suplementos */}
@@ -271,7 +301,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
         <div className="row">
           <button className="pri grow" onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}>+ 1 copo (250 ml)</button>
-          <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 500 }); }}>+ 500</button>
+          <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + bottle }); }}>+ garrafa {bottle}</button>
           <button aria-label="Remover 250 ml" onClick={() => saveLog({ water_ml: Math.max(0, log.water_ml - 250) })}>−</button>
         </div>
       </section>
@@ -287,6 +317,13 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         ) : (
           <>
             <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b></div>
+            <div className={"item pre" + (checks._pre ? " done" : "")}>
+              <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
+              <div className="t" onClick={() => toggle("_pre", !checks._pre)}>
+                <b><span className="supl">PRÉ</span>{PREWORKOUT.name}: {PREWORKOUT.dose}</b>
+                <div className="s">{PREWORKOUT.how} · tomar às {fmtHM(toMin(trainTime(T, day)) - 25)}</div>
+              </div>
+            </div>
             <div className="row">
               <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Abrir MFIT</a>
               <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
@@ -354,7 +391,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
 }
 function spNowTime(iso) { const m = spNow(new Date(iso)).min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
 
-function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree }) {
+function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree, onSnooze }) {
   const diff = toMin(time) - now;
   const status = m.workout ? "Agora · pós-treino" : diff > 0 ? `Próxima · em ${fmtDur(diff)}` : diff > -30 ? "Agora" : `Atrasada · ${fmtDur(diff)}`;
   const all = [m, ...extras];
@@ -365,7 +402,10 @@ function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, ext
       <div className="mh"><span className="lbl now-lbl">{status}</span><span className="time">{time}</span></div>
       <div className="mh"><h2 className="now-title">{m.name}</h2><span className="tag num">{n}/{total}</span></div>
       <Items m={m} checks={checks} swaps={swaps} toggle={toggle} setSwapFor={setSwapFor} extras={extras} target={target} />
-      <button className="ok big" onClick={() => markAll(m)}><Icon n="check" /> Comi tudo</button>
+      <div className="row">
+        <button className="ok big grow" onClick={() => markAll(m)}><Icon n="check" /> Comi tudo</button>
+        {diff <= 15 && !m.workout && <button className="snz" onClick={() => onSnooze(m)}>{checks._snooze?.[m.id] ? `Aviso às ${fmtHM(checks._snooze[m.id])}` : "Adiar 15 min"}</button>}
+      </div>
       {!m.workout && !checks._free && !freeBlocked && <button className="link" onClick={onFree}>Usar a refeição livre da semana aqui</button>}
     </section>
   );
@@ -520,11 +560,20 @@ function Progress({ uid, week, day, settings, onRefresh }) {
   const waterAvg = Math.round(days14.reduce((a, d) => a + (week[d]?.water_ml || 0), 0) / 14);
   const free = days14.filter((d) => week[d]?.free_meal).length;
   const trained = days14.filter((d) => week[d]?.workout_at).length;
-  let streak = 0; for (let i = 0; i < 30; i++) { if (score(week[addDays(day, -i)]) >= 95) streak++; else if (i > 0) break; }
+  let streak = 0; for (let i = 0; i < 120; i++) { if (score(week[addDays(day, -i)]) >= 95) streak++; else if (i > 0) break; }
   const last = weights.at(-1);
   const ciDays = Object.keys(week).filter((d) => week[d]?.checks?._ci).sort();
   const lastCi = ciDays.length ? week[ciDays.at(-1)].checks._ci : null;
   const [ciOpen, setCiOpen] = useState(false);
+  const days120 = Array.from({ length: 120 }, (_, i) => addDays(day, i - 119));
+  const bestRun = (ok) => { let b = 0, c = 0; days120.forEach((d) => { c = ok(d) ? c + 1 : 0; b = Math.max(b, c); }); return b; };
+  const bestDiet = bestRun((d) => score(week[d]) >= 95), bestWater = bestRun((d) => (week[d]?.water_ml || 0) >= WATER_GOAL);
+  const totalTrain = days120.filter((d) => week[d]?.workout_at).length, totalCi = days120.filter((d) => week[d]?.checks?._ci).length;
+  const BADGES = [
+    ["3 dias", "dieta 95%+ seguidos", bestDiet >= 3], ["7 dias", "dieta 95%+ seguidos", bestDiet >= 7], ["30 dias", "dieta 95%+ seguidos", bestDiet >= 30],
+    ["100 dias", "dieta 95%+ seguidos", bestDiet >= 100], ["Hidratado", "7 dias com 2,6 L", bestWater >= 7], ["Camelo", "30 dias com 2,6 L", bestWater >= 30],
+    ["20 treinos", "registrados", totalTrain >= 20], ["50 treinos", "registrados", totalTrain >= 50], ["Disciplina", "4 check-ins", totalCi >= 4],
+  ];
   const days30 = Array.from({ length: 28 }, (_, i) => addDays(day, i - 27));
   const pad = (weekday(days30[0]) + 6) % 7;
 
@@ -545,6 +594,11 @@ Feedback: ${feedback || "—"}`;
           {[["Adesão", adh + "%"], ["Água/dia", (waterAvg / 1000).toFixed(1).replace(".", ",") + " L"], ["Treinos", trained], ["Sequência", streak + " d"]].map(([l, v]) =>
             <div key={l}><div className="lbl">{l}</div><div className="num stat">{v}</div></div>)}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="mh"><h2>Conquistas</h2><span className="tag num">{BADGES.filter((b) => b[2]).length}/{BADGES.length}</span></div>
+        <div className="badges">{BADGES.map(([t, d, on]) => <div key={t} className={"bdg" + (on ? " on" : "")}><b>{t}</b><span>{d}</span></div>)}</div>
       </div>
 
       <div className="card">
@@ -624,7 +678,7 @@ function SubsTable() {
 }
 
 /* ---------- PLANO ---------- */
-function Plan({ settings, saveSettings }) {
+function Plan({ uid, settings, saveSettings, today, say }) {
   const T = settings.times || {};
   const left = settings.update_date ? Math.round((new Date(settings.update_date) - new Date(spNow().day)) / 864e5) : null;
   const setT = (k, v) => saveSettings({ times: { ...T, [k]: v } });
@@ -677,14 +731,34 @@ function Plan({ settings, saveSettings }) {
           {left !== null && <span className="tag">{left > 0 ? `faltam ${left} dias` : left === 0 ? "é hoje" : "atrasada"}</span>}</div>
       </div>
 
+      <Stock {...{ settings, saveSettings, today }} />
+
       <div className="card">
-        <h2>Estoque de suplementos</h2>
-        <div className="tag">Informe quando abriu o pote. Aviso 5 dias antes de acabar.</div>
-        {SUPPLIES.map((s) => {
-          const start = settings.supplies?.[s.id]; const end = start && addDays(start, s.days);
-          return <div key={s.id} className="mh"><span>{s.name}{end && <div className="tag">acaba em {fmtDay(end, { day: "2-digit", month: "2-digit" })}</div>}</span>
-            <input id={"sup-" + s.id} type="date" value={start || ""} onChange={(e) => saveSettings({ supplies: { ...settings.supplies, [s.id]: e.target.value } })} /></div>;
-        })}
+        <h2>Pré-treino</h2>
+        <div className="tag">{PREWORKOUT.name}: <b style={{ color: "var(--fg)" }}>{PREWORKOUT.dose}</b> {PREWORKOUT.how}. {PREWORKOUT.note}</div>
+        <div className="tag">Não está no plano do nutricionista: vale avisar o personal que você usa.</div>
+      </div>
+
+      <div className="card">
+        <h2>Dia e água</h2>
+        <div className="mh"><span>O dia termina às<div className="tag">ir dormir 1h ainda conta como hoje</div></span>
+          <select id="dayEnd" value={T.dayEnd || 0} onChange={(e) => setT("dayEnd", +e.target.value)}>
+            <option value={0}>00:00</option><option value={2}>02:00</option><option value={3}>03:00</option><option value={4}>04:00</option></select></div>
+        <div className="mh"><span>Sua garrafa</span>
+          <select id="bottle" value={T.bottle || 500} onChange={(e) => setT("bottle", +e.target.value)}>
+            {[300, 400, 500, 600, 750, 1000].map((v) => <option key={v} value={v}>{v} ml</option>)}</select></div>
+      </div>
+
+      <Shortcuts />
+      <PersonalLink {...{ settings, saveSettings, say }} />
+
+      <div className="card">
+        <h2>Receitas do plano</h2>
+        <div className="tag">Ideias de preparo usando só os alimentos e quantidades da sua dieta.</div>
+        {RECIPES.map((r) => (
+          <details key={r.name} className="recipe"><summary><b>{r.name}</b><span className="tag">{r.when}</span></summary>
+            <ul>{r.items.map((x) => <li key={x}>{x}</li>)}</ul><p>{r.how}</p></details>
+        ))}
       </div>
 
       <SubsTable />
@@ -700,7 +774,7 @@ function Plan({ settings, saveSettings }) {
 }
 
 /* ---------- COMPRAS ---------- */
-const SUP_ITEMS = ["Ômega 3", "Cápsula 1 (manhã)", "Cápsula 2 (jantar)", "Creatina", "Centrum Adulto", "Whey concentrado"];
+const SUP_ITEMS = ["Ômega 3", "Cápsula 1 (manhã)", "Cápsula 2 (jantar)", "Creatina", "Centrum Adulto", "Whey concentrado", "Dila Pump tangerina (pré-treino)"];
 const FOOD_ITEMS = [...new Set(MEALS.flatMap((m) => m.items.filter((it) => it.shop).map((it) => it.shop[0])))].filter((n) => n !== "Whey concentrado");
 
 function Shopping({ settings, saveSettings, say }) {
@@ -765,5 +839,68 @@ function Shopping({ settings, saveSettings, say }) {
         <div className="tag">Arroz e feijão em peso cozido. Mais Ômega 3 (3 g/dia), Centrum e cápsulas.</div>
       </div>
     </>
+  );
+}
+
+/* ---------- ESTOQUE ---------- */
+function Stock({ settings, saveSettings, today }) {
+  const stock = settings.supplies?._stock || {};
+  const set = (id, patch) => saveSettings({ supplies: { ...settings.supplies, _stock: { ...stock, [id]: { ...stock[id], ...patch } } } });
+  return (
+    <div className="card">
+      <h2>Estoque</h2>
+      <div className="tag">Ao abrir um pote, toque em "Abri um novo". Ele calcula quanto resta pelo consumo do plano e, faltando 5 dias, coloca na lista de compras e te avisa.</div>
+      {SUPPLIES.map((s) => {
+        const info = stock[s.id], r = stockLeft(s, info, today);
+        return (
+          <div key={s.id} className="stock">
+            <div className="mh"><b>{s.name}</b>{r && <span className={"tag num" + (r.days <= 5 ? " warn" : "")}>~{r.left} {s.unit.split(" ")[0]} · {r.days} dias</span>}</div>
+            {r && <div className="bar"><i style={{ width: `${Math.min(100, (r.left / (+info.qty || s.def)) * 100)}%`, background: r.days <= 5 ? "var(--warn)" : "var(--ok)" }} /></div>}
+            <div className="row tag">
+              <span>Pote com</span>
+              <input id={"qty-" + s.id} type="number" inputMode="numeric" value={info?.qty ?? s.def} onChange={(e) => set(s.id, { qty: +e.target.value })} style={{ width: 84 }} />
+              <span>{s.unit}</span>
+              <button className="sm" onClick={() => set(s.id, { start: today, qty: info?.qty ?? s.def, auto: null })}>Abri um novo</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------- ATALHOS ---------- */
+function Shortcuts() {
+  const base = typeof location !== "undefined" ? location.origin : "https://protocolo-victor.vercel.app";
+  const [c, setC] = useState(null);
+  const copy = async (t) => { try { await navigator.clipboard.writeText(t); setC(t); setTimeout(() => setC(null), 2000); } catch {} };
+  return (
+    <div className="card">
+      <h2>Atalho "Bebi água" (Siri)</h2>
+      <ol className="steps">
+        <li>Abra o app <b>Atalhos</b> do iPhone → <b>+</b> → <b>Adicionar Ação</b> → busque <b>Abrir URLs</b></li>
+        <li>Cole o endereço abaixo e dê o nome <b>Bebi água</b></li>
+        <li>Diga "E aí Siri, bebi água", ou adicione o atalho na tela de início / Toque Atrás (Ajustes → Acessibilidade → Toque)</li>
+      </ol>
+      {[250, 500].map((v) => { const u = `${base}/?agua=${v}`; return <button key={v} className="opt" onClick={() => copy(u)}><span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{u}</span><span className="q">{c === u ? "copiado" : "copiar"}</span></button>; })}
+    </div>
+  );
+}
+
+/* ---------- LINK DO PERSONAL ---------- */
+function PersonalLink({ settings, saveSettings, say }) {
+  const token = settings.supplies?._token;
+  const url = token ? `${typeof location !== "undefined" ? location.origin : ""}/p/${token}` : null;
+  const gen = () => { const t = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join(""); saveSettings({ supplies: { ...settings.supplies, _token: t } }); };
+  return (
+    <div className="card">
+      <h2>Link para o personal</h2>
+      <div className="tag">Página só de leitura com adesão, água, treinos, peso e check-ins dos últimos 28 dias. Dá para salvar em PDF por lá.</div>
+      {url ? <>
+        <button className="opt" onClick={async () => { try { await navigator.clipboard.writeText(url); say("Link copiado"); } catch {} }}><span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{url}</span><span className="q">copiar</span></button>
+        <div className="row"><a className="btn" href={url} target="_blank" rel="noreferrer">Ver como o personal vê</a>
+          <button onClick={() => { const s2 = { ...settings.supplies }; delete s2._token; saveSettings({ supplies: s2 }); say("Link desativado"); }}>Desativar link</button></div>
+      </> : <button className="pri" onClick={gen}>Gerar link</button>}
+    </div>
   );
 }

@@ -132,3 +132,22 @@ nav button{display:flex;flex-direction:column;align-items:center;gap:3px}
 .switch span::after{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}
 .switch input:checked+span{background:var(--ok)}
 .switch input:checked+span::after{left:23px}
+
+.daynav{display:flex;align-items:center;gap:6px}
+.daynav button{padding:0 8px;height:24px;border-radius:6px;font-size:16px;line-height:1}
+.card.editing{flex-direction:row;justify-content:space-between;align-items:center;border-color:var(--accent)}
+.snz{flex:none;font-size:13px}
+.item.pre{border-top:1px solid var(--line)}
+.stock{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.recipe{border-top:1px solid var(--line);padding:10px 0}
+.recipe summary{display:flex;flex-direction:column;gap:2px;cursor:pointer;list-style:none}
+.recipe ul{margin:8px 0 4px;padding-left:18px;font-size:14px}
+.recipe p{margin:0;font-size:14px;color:var(--mute)}
+.badges{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.bdg{border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;display:flex;flex-direction:column;gap:2px;opacity:.45}
+.bdg.on{opacity:1;border-color:var(--ok);background:var(--ok-soft)}
+.bdg b{font-family:var(--display);font-size:20px;text-transform:uppercase}
+.bdg span{font-size:11px;color:var(--mute)}
+.report{padding-bottom:40px}
+@media print{body{background:#fff;color:#000;padding:0}.card{border-color:#ccc;background:#fff}.noprint,nav{display:none}*{color:#000!important}}

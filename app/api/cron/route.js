@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
-import { MEALS, WATER_GOAL, SUPPLIES, LETTERS, mealTime, trainTime, mealIsDone, dayScore, weekday, weekShop, fmtQty } from "@/lib/plan";
+import { MEALS, WATER_GOAL, SUPPLIES, PREWORKOUT, stockLeft, effectiveNow, LETTERS, mealTime, trainTime, mealIsDone, dayScore, weekday, weekShop, fmtQty } from "@/lib/plan";
 import { spNow, toMin, addDays } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -14,18 +14,16 @@ export async function GET(req) {
   webpush.setVapidDetails("mailto:" + (process.env.VAPID_EMAIL || "admin@example.com"),
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const { day, min } = spNow();
-  const wd = weekday(day);
 
   const { data: subs } = await db.from("push_subs").select("*");
   const users = [...new Set((subs || []).map((s) => s.user_id))];
   let sent = 0;
 
   for (const uid of users) {
-    const [{ data: log }, { data: st }] = await Promise.all([
-      db.from("day_logs").select("*").eq("user_id", uid).eq("day", day).maybeSingle(),
-      db.from("settings").select("*").eq("user_id", uid).maybeSingle(),
-    ]);
+    const { data: st } = await db.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    const { day, min } = effectiveNow(spNow(), st?.times || {}, addDays);
+    const wd = weekday(day);
+    const { data: log } = await db.from("day_logs").select("*").eq("user_id", uid).eq("day", day).maybeSingle();
     const checks = log?.checks || {};
     const swaps = log?.swaps || {};
     const merge = checks._merge || {};
@@ -63,8 +61,14 @@ export async function GET(req) {
       if (done || merge[m.id] || checks._free === m.id) continue;
       const t = toMin(tOf(m)), body = pendingText(m);
       if (inWin(min, t)) msgs.push([`${m.id}-on`, `${tOf(m)} · ${m.name}`, body]);
-      if (inWin(min, t + 45)) msgs.push([`${m.id}-late`, `${m.name} ainda pendente`, `Falta: ${body}\nSe perdeu, o app sugere como repor.`]);
+      const snz = checks._snooze?.[m.id];
+      if (snz && inWin(min, snz, 5)) msgs.push([`${m.id}-snz-${snz}`, `Lembrete adiado · ${m.name}`, body]);
+      if (!snz && inWin(min, t + 45)) msgs.push([`${m.id}-late`, `${m.name} ainda pendente`, `Falta: ${body}\nSe perdeu, o app sugere como repor.`]);
     }
+
+    // pré-treino (25 min antes)
+    if (!log?.workout_at && !checks._pre && inWin(min, toMin(trainTime(times, day)) - 25))
+      msgs.push(["pre", `Pré-treino: ${PREWORKOUT.dose}`, `${PREWORKOUT.name} ${PREWORKOUT.how}. Treino ${nextL} às ${trainTime(times, day)}.`]);
 
     // treino
     if (!log?.workout_at && inWin(min, toMin(trainTime(times, day))))
@@ -102,11 +106,10 @@ export async function GET(req) {
       if (st.update_date === addDays(day, 1)) msgs.push(["upd-eve", "Atualização amanhã", "Amanhã: pese em jejum e tire as fotos."]);
     }
 
-    // suplementos acabando (5 dias antes)
-    for (const s of SUPPLIES) {
-      const start = st?.supplies?.[s.id];
-      if (start && addDays(start, s.days - 5) === day && inWin(min, 9 * 60))
-        msgs.push([`sup-${s.id}`, "Suplemento acabando", `${s.name} acaba em ~5 dias. Já coloquei na sua lista? Toque em Compras.`]);
+    // estoque acabando (5 dias antes) — o app já põe na lista de compras
+    if (inWin(min, 9 * 60)) {
+      const low = SUPPLIES.map((s) => [s, stockLeft(s, st?.supplies?._stock?.[s.id], day)]).filter(([, r]) => r && r.days <= 5);
+      if (low.length) msgs.push(["estoque", "Estoque acabando", low.map(([s, r]) => `${s.name}: ~${r.days} dias`).join("\n") + "\nJá está na aba Compras."]);
     }
 
     for (const [k, title, body] of msgs) {
@@ -119,6 +122,6 @@ export async function GET(req) {
       }
     }
   }
-  await db.from("sent_log").delete().lt("key", addDays(day, -3));
+  await db.from("sent_log").delete().lt("key", addDays(spNow().day, -3));
   return Response.json({ ok: true, sent });
 }
