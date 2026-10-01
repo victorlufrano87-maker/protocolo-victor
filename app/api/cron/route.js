@@ -46,6 +46,13 @@ export async function GET(req) {
         msgs.push([`${m.id}-late`, `${m.name} ainda pendente`, "Se perdeu, una com a próxima refeição (mas não com frequência)."]);
     }
 
+    // treino: lembrete no horário, se ainda não marcou
+    const tt = toMin(times.treino || "18:00");
+    if (!log?.workout_at && min >= tt && min < tt + 15) {
+      const divs = +(times.divs || 4), L = "ABCDEF"[(+(times.next || 0)) % divs];
+      msgs.push(["treino", `Hora do treino ${L}`, "Abra o MFIT. Ao terminar, toque em \"Terminei o treino\" para o pós-treino."]);
+    }
+
     // água: confere o ritmo às 10h, 12h, 14h, 16h, 18h e 20h
     const water = log?.water_ml || 0;
     for (const h of [10, 12, 14, 16, 18, 20]) {
