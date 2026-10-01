@@ -1,19 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
-import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, mainItemsCount } from "@/lib/plan";
+import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
 
 const EMPTY = { checks: {}, swaps: {}, water_ml: 0, free_meal: false, workout_at: null };
 const CUP = 250, CUPS = Math.ceil(WATER_GOAL / CUP);
 const MFIT_URL = "https://www.mfitpersonal.com.br";
-const LETTERS = "ABCDEF";
 
-function score(log) {
-  if (!log) return 0;
-  let done = 0;
-  MEALS.filter((m) => !m.workout).forEach((m) => m.items.forEach((_, i) => { if (log.checks?.[`${m.id}-${i}`]) done++; }));
-  return Math.round(((done / mainItemsCount()) * 0.75 + Math.min((log.water_ml || 0) / WATER_GOAL, 1) * 0.25) * 100);
-}
+const score = dayScore;
 const fmtPortion = (p, measure) => p === 1 ? measure : p === 0.5 ? `½ de ${measure}` : `${p}× ${measure}`;
 const b64ToU8 = (b) => { const p = "=".repeat((4 - (b.length % 4)) % 4); const r = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
 const buzz = (ms = 15) => { try { navigator.vibrate?.(ms); } catch {} };
@@ -131,8 +125,8 @@ function App({ uid }) {
         </div>
       </header>
 
-      {tab === "hoje" && <Today {...{ log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
-      {tab === "prog" && <Progress {...{ uid, week, day, settings }} />}
+      {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
+      {tab === "prog" && <Progress {...{ uid, week, day, settings, onRefresh: load }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ settings, saveSettings }} />}
 
@@ -168,29 +162,49 @@ function Confetti() {
 }
 
 /* ---------- HOJE ---------- */
-function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }) {
+function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }) {
   const T = settings.times || {};
-  const tOf = (m) => T[m.id] || m.time;
   const checks = log.checks || {};
+  const merge = checks._merge || {};
+  const freeId = checks._free;
   const workoutToday = !!log.workout_at;
-  const meals = MEALS.filter((m) => !m.workout || workoutToday)
-    .map((m) => m.workout ? { ...m, time: log.workout_at ? spNowTime(log.workout_at) : m.time } : m)
-    .sort((a, b) => toMin(a.workout ? a.time : tOf(a)) - toMin(b.workout ? b.time : tOf(b)));
-  const timeOf = (m) => m.workout ? m.time : tOf(m);
-
-  // refeição em foco: pós-treino pendente > primeira pendente
-  const pt = meals.find((m) => m.workout && !mealDone(m, checks));
+  const tOf = (m) => m.workout ? (log.workout_at ? spNowTime(log.workout_at) : m.time) : mealTime(m, T, day);
+  const meals = MEALS.filter((m) => !m.workout || workoutToday).sort((a, b) => toMin(tOf(a)) - toMin(tOf(b)));
   const main = meals.filter((m) => !m.workout);
-  const missed = (m) => { const nx = main[main.indexOf(m) + 1]; return !mealDone(m, checks) && !!nx && toMin(timeOf(nx)) <= now; };
-  const focus = pt || main.find((m) => !mealDone(m, checks) && !missed(m)) || main.find((m) => !mealDone(m, checks));
-  const missedCount = main.filter(missed).length;
+  const done = (m) => mealIsDone(log, m);
+  const nextOf = (m) => main[main.indexOf(m) + 1];
+  const missed = (m) => !done(m) && !merge[m.id] && !!nextOf(m) && toMin(tOf(nextOf(m))) <= now;
+  const extrasFor = (m) => Object.entries(merge).filter(([, t]) => t === m.id).map(([s]) => MEALS.find((x) => x.id === s)).filter(Boolean);
+
+  const pt = meals.find((m) => m.workout && !done(m));
+  const focus = pt || main.find((m) => !done(m) && !merge[m.id] && !missed(m)) || main.find((m) => !done(m) && !merge[m.id]);
+  const missedList = main.filter(missed);
   const [open, setOpen] = useState(null);
 
-  const toggle = (k, v) => { buzz(); saveLog({ checks: { ...checks, [k]: v } }); };
-  const markAll = (m) => { const c = { ...checks }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); };
+  // semana atual (segunda a domingo) para refeição livre e reposições
+  const wd = weekday(day), monday = addDays(day, -((wd + 6) % 7));
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i)).filter((d) => d <= day);
+  const freeUsedOn = weekDays.find((d) => d !== day && week[d]?.checks?._free);
+  const mergesWeek = Array.from({ length: 7 }, (_, i) => addDays(day, -i)).filter((d) => Object.values(week[d]?.checks?._merge || {}).some((v) => v !== "skip")).length;
 
-  // suplementos do dia em ordem de horário
-  const sups = meals.flatMap((m) => m.items.map((it, i) => ({ it, k: `${m.id}-${i}`, time: timeOf(m) })).filter((x) => x.it.sup));
+  const toggle = (k, v) => { buzz(); saveLog({ checks: { ...checks, [k]: v } }); };
+  const markAll = (m) => {
+    const c = { ...checks };
+    [m, ...extrasFor(m)].forEach((x) => x.items.forEach((_, i) => { c[`${x.id}-${i}`] = true; }));
+    saveLog({ checks: c });
+  };
+  const doMerge = (src, target) => { buzz(30); saveLog({ checks: { ...checks, _merge: { ...merge, [src.id]: target } } }); say(target === "skip" ? `${src.name} pulado` : `${src.name} vai junto com o ${nextOf(src).name}`); };
+  const undoMerge = (src) => { const m2 = { ...merge }; delete m2[src.id]; saveLog({ checks: { ...checks, _merge: m2 } }); };
+  const useFree = (m) => { buzz(40); saveLog({ checks: { ...checks, _free: m.id }, free_meal: true }); say("Refeição livre registrada"); };
+  const undoFree = () => { const c = { ...checks }; delete c._free; saveLog({ checks: c, free_meal: false }); };
+
+  // suplementos do dia em ordem de horário (inclui os que foram para outra refeição)
+  const sups = meals.flatMap((m) => m.items.map((it, i) => ({ it, k: `${m.id}-${i}`, time: merge[m.id] && merge[m.id] !== "skip" ? tOf(MEALS.find((x) => x.id === merge[m.id])) : tOf(m) })).filter((x) => x.it.sup))
+    .sort((a, b) => toMin(a.time) - toMin(b.time));
+
+  // cafeína
+  const caf = checks._caf || [];
+  const cafTotal = caf.reduce((a, b) => a + b, 0);
 
   // treino
   const divs = +(T.divs || 4), nextIdx = +(T.next || 0) % divs;
@@ -201,19 +215,37 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
     saveSettings({ times: { ...T, next: (nextIdx + 1) % divs } });
     try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
   }
-  async function undoWorkout() {
-    await saveLog({ workout_at: null });
-    saveSettings({ times: { ...T, next: doneIdx } }); say("Treino desmarcado");
-  }
+  async function undoWorkout() { await saveLog({ workout_at: null }); saveSettings({ times: { ...T, next: doneIdx } }); say("Treino desmarcado"); }
+
+  const weighDay = T.weigh !== undefined && T.weigh !== "" && +T.weigh === wd;
 
   return (
     <>
       <PushBanner />
 
-      {focus ? <NowCard m={focus} time={timeOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor} />
-        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { ...checks, _ci: ci } })} />}
 
-      {missedCount > 0 && <div className="tag warn">{missedCount} refeição(ões) anterior(es) não marcada(s). Se comeu, marque em "Dia completo". Se perdeu, una com a próxima (sem virar hábito).</div>}
+      {missedList.map((m) => {
+        const nx = nextOf(m);
+        return (
+          <section key={m.id} className="card missed">
+            <div className="lbl warn">Refeição perdida · {tOf(m)}</div>
+            <h3>{m.name}</h3>
+            <div className="tag">Comeu e esqueceu de marcar? Toque em "Já comi". Se perdeu, o plano manda juntar com a próxima refeição ({nx.name}, {tOf(nx)}):</div>
+            <ul className="sugg">{replaceSuggestion(m, nx).map((l) => <li key={l.text} className={l.sup ? "sup" : ""}>{l.text}</li>)}</ul>
+            {mergesWeek >= 2 && <div className="tag warn">Atenção: você já repôs refeições {mergesWeek} vezes nos últimos 7 dias. O plano pede que isso não vire hábito.</div>}
+            <div className="row">
+              <button className="pri grow" onClick={() => doMerge(m, nx.id)}>Repor no {nx.name.toLowerCase()}</button>
+              <button onClick={() => markAll(m)}>Já comi</button>
+            </div>
+            <button className="link" onClick={() => doMerge(m, "skip")}>Pular sem repor</button>
+          </section>
+        );
+      })}
+
+      {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
+          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)} />
+        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
 
       {/* Suplementos */}
       <section className="card">
@@ -246,10 +278,7 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
 
       {/* Treino */}
       <section className="card">
-        <div className="mh">
-          <h3>Treino</h3>
-          <span className="tag num">{T.treino || "18:00"}</span>
-        </div>
+        <div className="mh"><h3>Treino</h3><span className="tag num">{trainTime(T, day)}</span></div>
         {workoutToday ? (
           <>
             <div className="big-line"><Icon n="check" /> Treino {LETTERS[doneIdx]} feito · próximo: <b>{LETTERS[nextIdx]}</b></div>
@@ -267,23 +296,41 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
         )}
       </section>
 
+      {/* Cafeína */}
+      <section className="card">
+        <div className="mh"><h3>Cafeína</h3><span className={"num" + (cafTotal > CAFFEINE_MAX ? " bad" : cafTotal >= 400 ? " warn" : "")}>{cafTotal} / {CAFFEINE_MAX} mg</span></div>
+        <div className="bar"><i style={{ width: `${Math.min((cafTotal / CAFFEINE_MAX) * 100, 100)}%`, background: cafTotal > CAFFEINE_MAX ? "var(--bad)" : cafTotal >= 400 ? "var(--warn)" : "var(--accent)" }} /></div>
+        {cafTotal >= 400 && <div className={"tag " + (cafTotal > CAFFEINE_MAX ? "bad" : "warn")}>{cafTotal > CAFFEINE_MAX ? "Passou do limite de 500 mg do plano." : `Restam ${CAFFEINE_MAX - cafTotal} mg para o limite.`}</div>}
+        <div className="chips">
+          {CAFFEINE.map(([n, mg]) => <button key={n} className="chip" onClick={() => { buzz(); saveLog({ checks: { ...checks, _caf: [...caf, mg] } }); }}><span className="num">{mg} mg</span><b>{n}</b></button>)}
+        </div>
+        {caf.length > 0 && <button className="link" onClick={() => saveLog({ checks: { ...checks, _caf: caf.slice(0, -1) } })}>Desfazer último</button>}
+      </section>
+
       {/* Linha do dia */}
       <section className="card">
         <h3>Dia completo</h3>
         <div className="timeline">
           {meals.map((m) => {
-            const done = mealDone(m, checks), n = m.items.filter((_, i) => checks[`${m.id}-${i}`]).length;
-            const isOpen = open === m.id, late = !done && toMin(timeOf(m)) + 30 < now;
+            const isDone = done(m), n = m.items.filter((_, i) => itemDone(log, m, i)).length;
+            const mg = merge[m.id], isOpen = open === m.id, late = !isDone && !mg && toMin(tOf(m)) + 30 < now;
+            const status = freeId === m.id ? "livre" : isDone ? "feito" : mg === "skip" ? "pulada" : mg ? `→ ${MEALS.find((x) => x.id === mg)?.name.toLowerCase()}` : missed(m) ? "perdida" : late ? "atrasada" : `${n}/${m.items.length}`;
             return (
-              <div key={m.id} className={"tl" + (done ? " done" : "") + (focus?.id === m.id ? " focus" : "")}>
+              <div key={m.id} className={"tl" + (isDone ? " done" : "") + (focus?.id === m.id ? " focus" : "")}>
                 <button className="tl-head" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen}>
-                  <span className="dot">{done && <Icon n="check" s={14} />}</span>
-                  <span className="num tl-time">{timeOf(m)}</span>
+                  <span className="dot">{isDone && <Icon n="check" s={14} />}</span>
+                  <span className="num tl-time">{tOf(m)}</span>
                   <span className="tl-name">{m.name}</span>
-                  <span className={"tag num" + (late ? " warn" : "")}>{done ? "feito" : !m.workout && missed(m) ? "perdida" : late ? "atrasada" : `${n}/${m.items.length}`}</span>
+                  <span className={"tag num" + (late || missed(m) ? " warn" : "")}>{status}</span>
                 </button>
-                {isOpen && <div className="tl-body"><Items m={m} checks={checks} swaps={log.swaps || {}} toggle={toggle} setSwapFor={setSwapFor} />
-                  {!done && <button className="ok" onClick={() => markAll(m)}>Marcar tudo</button>}</div>}
+                {isOpen && <div className="tl-body">
+                  {freeId === m.id ? <><div className="tag">Substituída pela refeição livre da semana.</div><button className="link" onClick={undoFree}>Desfazer refeição livre</button></> : <>
+                    <Items m={m} checks={checks} swaps={log.swaps || {}} toggle={toggle} setSwapFor={setSwapFor} extras={extrasFor(m)} target={m} />
+                    {!isDone && <button className="ok" onClick={() => markAll(m)}>Marcar tudo</button>}
+                    {mg && <button className="link" onClick={() => undoMerge(m)}>Desfazer reposição/pulo</button>}
+                    {!m.workout && !isDone && !freeId && !freeUsedOn && <button className="link" onClick={() => useFree(m)}>Usar refeição livre aqui</button>}
+                  </>}
+                </div>}
               </div>
             );
           })}
@@ -292,50 +339,101 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
 
       {/* Semana */}
       <section className="card">
-        <div className="mh"><h3>Semana</h3><span className="tag">verde = 100%</span></div>
+        <div className="mh"><h3>Semana</h3><span className="tag">verde = 100% · contorno laranja = livre</span></div>
         <div className="week">
           {Array.from({ length: 7 }, (_, i) => addDays(day, i - 6)).map((d) => {
-            const sc = score(week[d]);
-            return <div key={d} className={"d" + (sc >= 95 ? " full" : sc > 0 ? " part" : "") + (week[d]?.free_meal ? " free" : "") + (d === day ? " today" : "")}>
+            const sc = dayScore(week[d]);
+            return <div key={d} className={"d" + (sc >= 95 ? " full" : sc > 0 ? " part" : "") + (week[d]?.checks?._free ? " free" : "") + (d === day ? " today" : "")}>
               {fmtDay(d, { weekday: "short" }).slice(0, 3)}<b>{sc}</b></div>;
           })}
         </div>
-        <button onClick={() => saveLog({ free_meal: !log.free_meal })}>{log.free_meal ? "Refeição livre usada hoje ✓" : "Usei a refeição livre hoje"}</button>
+        <div className="tag">{freeId ? "Refeição livre usada hoje." : freeUsedOn ? `Refeição livre da semana já usada (${fmtDay(freeUsedOn, { weekday: "long" })}).` : "Refeição livre da semana disponível: use pelo card da refeição."}</div>
       </section>
     </>
   );
 }
 function spNowTime(iso) { const m = spNow(new Date(iso)).min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
 
-function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor }) {
+function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree }) {
   const diff = toMin(time) - now;
   const status = m.workout ? "Agora · pós-treino" : diff > 0 ? `Próxima · em ${fmtDur(diff)}` : diff > -30 ? "Agora" : `Atrasada · ${fmtDur(diff)}`;
-  const n = m.items.filter((_, i) => checks[`${m.id}-${i}`]).length;
+  const all = [m, ...extras];
+  const total = all.reduce((a, x) => a + x.items.length, 0);
+  const n = all.reduce((a, x) => a + x.items.filter((_, i) => checks[`${x.id}-${i}`]).length, 0);
   return (
     <section className={"card now" + (diff <= -30 && !m.workout ? " late" : "")}>
       <div className="mh"><span className="lbl now-lbl">{status}</span><span className="time">{time}</span></div>
-      <div className="mh"><h2 className="now-title">{m.name}</h2><span className="tag num">{n}/{m.items.length}</span></div>
-      <Items m={m} checks={checks} swaps={swaps} toggle={toggle} setSwapFor={setSwapFor} />
+      <div className="mh"><h2 className="now-title">{m.name}</h2><span className="tag num">{n}/{total}</span></div>
+      <Items m={m} checks={checks} swaps={swaps} toggle={toggle} setSwapFor={setSwapFor} extras={extras} target={target} />
       <button className="ok big" onClick={() => markAll(m)}><Icon n="check" /> Comi tudo</button>
+      {!m.workout && !checks._free && !freeBlocked && <button className="link" onClick={onFree}>Usar a refeição livre da semana aqui</button>}
     </section>
   );
 }
 
-function Items({ m, checks, swaps, toggle, setSwapFor }) {
-  return m.items.map((it, i) => {
-    const k = `${m.id}-${i}`, on = !!checks[k], sw = swaps[k];
-    return (
-      <div key={k} className={"item" + (on ? " done" : "")}>
-        <button className={"ck" + (on ? " on" : "")} aria-pressed={on} aria-label={on ? "Desmarcar" : "Marcar"} onClick={() => toggle(k, !on)}>{on && <Icon n="check" s={16} />}</button>
-        <div className="t" onClick={() => toggle(k, !on)}>
-          <b>{it.sup && <span className="supl">SUPL</span>}{sw || it.t}</b>
-          {sw && <div className="swapped">trocado · original: {it.t}</div>}
-          {!sw && it.s && <div className="s">{it.s}</div>}
-        </div>
-        {it.g && <button className="icon-btn" aria-label="Trocar alimento" onClick={() => setSwapFor({ key: k, item: it })}><Icon n="swap" s={18} /></button>}
+function ItemRow({ m, it, i, checks, swaps, toggle, setSwapFor, note }) {
+  const k = `${m.id}-${i}`, on = !!checks[k], sw = swaps[k];
+  return (
+    <div className={"item" + (on ? " done" : "")}>
+      <button className={"ck" + (on ? " on" : "")} aria-pressed={on} aria-label={on ? "Desmarcar" : "Marcar"} onClick={() => toggle(k, !on)}>{on && <Icon n="check" s={16} />}</button>
+      <div className="t" onClick={() => toggle(k, !on)}>
+        <b>{it.sup && <span className="supl">SUPL</span>}{sw || it.t}</b>
+        {sw && <div className="swapped">trocado · original: {it.t}</div>}
+        {note ? <div className="s accent">{note}</div> : !sw && it.s && <div className="s">{it.s}</div>}
       </div>
-    );
-  });
+      {it.g && <button className="icon-btn" aria-label="Trocar alimento" onClick={() => setSwapFor({ key: k, item: it })}><Icon n="swap" s={18} /></button>}
+    </div>
+  );
+}
+
+function Items({ m, checks, swaps, toggle, setSwapFor, extras = [], target }) {
+  return (
+    <>
+      {m.items.map((it, i) => <ItemRow key={i} {...{ m, it, i, checks, swaps, toggle, setSwapFor }} />)}
+      {extras.map((src) => {
+        const sugg = replaceSuggestion(src, target);
+        return (
+          <div key={src.id} className="extra">
+            <div className="lbl warn">Repor do {src.name.toLowerCase()}</div>
+            {src.items.map((it, i) => <ItemRow key={i} {...{ m: src, it, i, checks, swaps, toggle, setSwapFor }} note={sugg[i]?.text} />)}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function WeighCard({ uid, day, say, hasCheckin, saveCheckin }) {
+  const [kg, setKg] = useState(""); const [saved, setSaved] = useState(false);
+  useEffect(() => { supabase.from("weights").select("id").eq("user_id", uid).eq("day", day).then(({ data }) => setSaved(!!data?.length)); }, [uid, day]);
+  if (saved && hasCheckin) return null;
+  return (
+    <section className="card now">
+      <div className="lbl now-lbl">Dia de pesagem e check-in</div>
+      {!saved && <>
+        <div className="tag">Pese em jejum, depois do banheiro e antes de comer ou beber.</div>
+        <div className="row"><input id="wkg" inputMode="decimal" placeholder="kg" value={kg} onChange={(e) => setKg(e.target.value)} style={{ width: 110 }} />
+          <button className="pri" onClick={async () => { const v = parseFloat(kg.replace(",", ".")); if (!v) return; await supabase.from("weights").insert({ user_id: uid, day, kg: v }); setSaved(true); buzz(40); say("Peso registrado"); }}>Registrar peso</button></div>
+      </>}
+      {!hasCheckin && <CheckinForm onSave={(ci) => { saveCheckin(ci); say("Check-in salvo"); }} />}
+    </section>
+  );
+}
+
+const CI_FIELDS = [["fome", "Fome"], ["energia", "Energia"], ["sono", "Sono"], ["intestino", "Intestino"], ["treino", "Treinos"]];
+function CheckinForm({ onSave, initial }) {
+  const [ci, setCi] = useState(initial || {});
+  return (
+    <div className="ci">
+      <div className="tag">Como foi a semana? 1 = ruim, 5 = ótimo{" "}(fome: 1 = muita fome)</div>
+      {CI_FIELDS.map(([k, l]) => (
+        <div key={k} className="ci-row"><span>{l}</span>
+          <div className="ci-opts">{[1, 2, 3, 4, 5].map((v) => <button key={v} className={ci[k] === v ? "on" : ""} onClick={() => { buzz(); setCi({ ...ci, [k]: v }); }}>{v}</button>)}</div>
+        </div>
+      ))}
+      <button className="pri" disabled={CI_FIELDS.some(([k]) => !ci[k])} onClick={() => onSave(ci)}>Salvar check-in</button>
+    </div>
+  );
 }
 
 function SwapSheet({ item, current, onPick, onClose, addShop }) {
@@ -387,7 +485,7 @@ function PushBanner() {
 }
 
 /* ---------- PROGRESSO ---------- */
-function Progress({ uid, week, day, settings }) {
+function Progress({ uid, week, day, settings, onRefresh }) {
   const [weights, setWeights] = useState([]); const [kg, setKg] = useState("");
   const [photos, setPhotos] = useState([]); const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState(""); const [copied, setCopied] = useState(false);
@@ -424,12 +522,18 @@ function Progress({ uid, week, day, settings }) {
   const trained = days14.filter((d) => week[d]?.workout_at).length;
   let streak = 0; for (let i = 0; i < 30; i++) { if (score(week[addDays(day, -i)]) >= 95) streak++; else if (i > 0) break; }
   const last = weights.at(-1);
+  const ciDays = Object.keys(week).filter((d) => week[d]?.checks?._ci).sort();
+  const lastCi = ciDays.length ? week[ciDays.at(-1)].checks._ci : null;
+  const [ciOpen, setCiOpen] = useState(false);
+  const days30 = Array.from({ length: 28 }, (_, i) => addDays(day, i - 27));
+  const pad = (weekday(days30[0]) + 6) % 7;
 
   const kit = `Atualização — ${fmtDay(day, { day: "2-digit", month: "2-digit", year: "numeric" })}
 Peso em jejum: ${last ? String(last.kg).replace(".", ",") + " kg" : "—"} (inicial 72,4 kg${last ? `, ${(last.kg - START_WEIGHT >= 0 ? "+" : "")}${(last.kg - START_WEIGHT).toFixed(1).replace(".", ",")} kg` : ""})
 Adesão à dieta (14 dias): ${adh}%
 Água média: ${(waterAvg / 1000).toFixed(1).replace(".", ",")} L/dia (meta 2,6 L)
-Treinos (14 dias): ${trained}
+Treinos (14 dias): ${trained}${lastCi ? `
+Check-in (1-5): fome ${lastCi.fome} · energia ${lastCi.energia} · sono ${lastCi.sono} · intestino ${lastCi.intestino} · treinos ${lastCi.treino}` : ""}
 Refeições livres: ${free} em 14 dias
 Feedback: ${feedback || "—"}`;
 
@@ -441,6 +545,26 @@ Feedback: ${feedback || "—"}`;
           {[["Adesão", adh + "%"], ["Água/dia", (waterAvg / 1000).toFixed(1).replace(".", ",") + " L"], ["Treinos", trained], ["Sequência", streak + " d"]].map(([l, v]) =>
             <div key={l}><div className="lbl">{l}</div><div className="num stat">{v}</div></div>)}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="mh"><h2>Últimas 4 semanas</h2><span className="tag">adesão por dia</span></div>
+        <div className="cal">
+          {["S", "T", "Q", "Q", "S", "S", "D"].map((l, i) => <span key={i} className="lbl">{l}</span>)}
+          {Array.from({ length: pad }, (_, i) => <span key={"p" + i} />)}
+          {days30.map((d) => { const sc = score(week[d]); return <span key={d} title={`${d}: ${sc}%`} className={"cal-d" + (sc >= 95 ? " full" : sc >= 60 ? " mid" : sc > 0 ? " low" : "") + (d === day ? " today" : "")}>{+d.slice(8)}</span>; })}
+        </div>
+        <div className="tag">Verde: 95%+ · azul: 60%+ · cinza claro: abaixo · vazio: sem registro</div>
+      </div>
+
+      <div className="card">
+        <div className="mh"><h2>Check-in semanal</h2>{!ciOpen && <button className="sm" onClick={() => setCiOpen(true)}>Fazer agora</button>}</div>
+        {lastCi ? <div className="tag">Último ({fmtDay(ciDays.at(-1), { day: "2-digit", month: "2-digit" })}): {CI_FIELDS.map(([k, l]) => `${l} ${lastCi[k]}`).join(" · ")}</div> : <div className="tag">Nenhum check-in ainda. Ele entra no kit de atualização para o personal.</div>}
+        {ciOpen && <CheckinForm initial={week[day]?.checks?._ci} onSave={async (ci) => {
+          const cur = week[day] || EMPTY;
+          await supabase.from("day_logs").upsert({ user_id: uid, day, checks: { ...(cur.checks || {}), _ci: ci }, swaps: cur.swaps || {}, water_ml: cur.water_ml || 0, free_meal: !!cur.free_meal, workout_at: cur.workout_at || null });
+          setCiOpen(false); onRefresh?.();
+        }} />}
       </div>
 
       <div className="card">
@@ -502,17 +626,6 @@ function SubsTable() {
 /* ---------- PLANO ---------- */
 function Plan({ settings, saveSettings }) {
   const T = settings.times || {};
-  const [trainings, setTrainings] = useState(5);
-  const shop = useMemo(() => {
-    const acc = {};
-    MEALS.forEach((m) => m.items.forEach((it) => {
-      if (!it.shop) return; const [n, q, u] = it.shop; const mult = m.workout ? trainings : 7;
-      acc[n] = acc[n] || { q: 0, u }; acc[n].q += q * mult;
-    }));
-    acc["Creatina"] = { q: 42, u: "g" };
-    return Object.entries(acc);
-  }, [trainings]);
-  const fmtQ = (q, u) => u === "g" && q >= 1000 ? `${(q / 1000).toFixed(2).replace(".", ",")} kg` : `${q} ${u}`;
   const left = settings.update_date ? Math.round((new Date(settings.update_date) - new Date(spNow().day)) / 864e5) : null;
   const setT = (k, v) => saveSettings({ times: { ...T, [k]: v } });
   const divs = +(T.divs || 4);
@@ -526,6 +639,26 @@ function Plan({ settings, saveSettings }) {
           <div key={m.id} className="mh"><span>{m.name}</span><input id={"tm-" + m.id} type="time" value={T[m.id] || m.time} onChange={(e) => setT(m.id, e.target.value)} /></div>
         ))}
         <div className="mh"><span>Treino</span><input id="tm-treino" type="time" value={T.treino || "18:00"} onChange={(e) => setT("treino", e.target.value)} /></div>
+      </div>
+
+      <div className="card">
+        <div className="mh"><h2>Fim de semana</h2>
+          <label className="switch"><input id="we-on" type="checkbox" checked={!!T.we_on} onChange={(e) => setT("we_on", e.target.checked)} /><span /></label></div>
+        <div className="tag">{T.we_on ? "Sábado e domingo usam estes horários (avisos também)." : "Ligue para usar horários diferentes no sábado e domingo."}</div>
+        {T.we_on && <>
+          {MEALS.filter((m) => !m.workout).map((m) => (
+            <div key={m.id} className="mh"><span>{m.name}</span><input id={"we-" + m.id} type="time" value={T["we_" + m.id] || T[m.id] || m.time} onChange={(e) => setT("we_" + m.id, e.target.value)} /></div>
+          ))}
+          <div className="mh"><span>Treino</span><input id="we-treino" type="time" value={T.we_treino || T.treino || "18:00"} onChange={(e) => setT("we_treino", e.target.value)} /></div>
+        </>}
+      </div>
+
+      <div className="card">
+        <h2>Pesagem e check-in semanal</h2>
+        <div className="tag">No dia escolhido: aviso às 6h45 para pesar em jejum e card de check-in no app.</div>
+        <div className="mh"><span>Dia da semana</span>
+          <select id="weigh" value={T.weigh ?? ""} onChange={(e) => setT("weigh", e.target.value === "" ? "" : +e.target.value)}>
+            <option value="">Não definido</option>{WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}</select></div>
       </div>
 
       <div className="card">
@@ -587,16 +720,8 @@ function Shopping({ settings, saveSettings, say }) {
   }
   async function shareList() { try { await navigator.share({ title: "Lista de compras", text }); } catch {} }
 
-  const week = useMemo(() => {
-    const acc = {};
-    MEALS.forEach((m) => m.items.forEach((it) => {
-      if (!it.shop) return; const [n, q, u] = it.shop; const mult = m.workout ? trainings : 7;
-      acc[n] = acc[n] || { q: 0, u }; acc[n].q += q * mult;
-    }));
-    acc["Creatina"] = { q: 42, u: "g" };
-    return Object.entries(acc);
-  }, [trainings]);
-  const fmtQ = (q, u) => u === "g" && q >= 1000 ? `${(q / 1000).toFixed(2).replace(".", ",")} kg` : `${q} ${u}`;
+  const week = useMemo(() => weekShop(trainings), [trainings]);
+  const fmtQ = fmtQty;
 
   const Quick = ({ title, items }) => (
     <div className="card">
