@@ -172,7 +172,10 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
 
   // refeição em foco: pós-treino pendente > primeira pendente
   const pt = meals.find((m) => m.workout && !mealDone(m, checks));
-  const focus = pt || meals.find((m) => !m.workout && !mealDone(m, checks));
+  const main = meals.filter((m) => !m.workout);
+  const missed = (m) => { const nx = main[main.indexOf(m) + 1]; return !mealDone(m, checks) && !!nx && toMin(timeOf(nx)) <= now; };
+  const focus = pt || main.find((m) => !mealDone(m, checks) && !missed(m)) || main.find((m) => !mealDone(m, checks));
+  const missedCount = main.filter(missed).length;
   const [open, setOpen] = useState(null);
 
   const toggle = (k, v) => { buzz(); saveLog({ checks: { ...checks, [k]: v } }); };
@@ -201,6 +204,8 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
 
       {focus ? <NowCard m={focus} time={timeOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+
+      {missedCount > 0 && <div className="tag warn">{missedCount} refeição(ões) anterior(es) não marcada(s). Se comeu, marque em "Dia completo". Se perdeu, una com a próxima (sem virar hábito).</div>}
 
       {/* Suplementos */}
       <section className="card">
@@ -267,7 +272,7 @@ function Today({ log, saveLog, settings, saveSettings, week, day, now, setSwapFo
                   <span className="dot">{done && <Icon n="check" s={14} />}</span>
                   <span className="num tl-time">{timeOf(m)}</span>
                   <span className="tl-name">{m.name}</span>
-                  <span className={"tag num" + (late ? " warn" : "")}>{done ? "feito" : late ? "atrasada" : `${n}/${m.items.length}`}</span>
+                  <span className={"tag num" + (late ? " warn" : "")}>{done ? "feito" : !m.workout && missed(m) ? "perdida" : late ? "atrasada" : `${n}/${m.items.length}`}</span>
                 </button>
                 {isOpen && <div className="tl-body"><Items m={m} checks={checks} swaps={log.swaps || {}} toggle={toggle} setSwapFor={setSwapFor} />
                   {!done && <button className="ok" onClick={() => markAll(m)}>Marcar tudo</button>}</div>}
