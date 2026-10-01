@@ -44,7 +44,7 @@ export async function GET(req) {
     // bom dia (06:45)
     if (inWin(min, 6 * 60 + 45)) {
       const first = MEALS.filter((m) => !m.workout).sort((a, b) => toMin(tOf(a)) - toMin(tOf(b)))[0];
-      const lines = [`Treino ${nextL} às ${trainTime(times, day)}`, "Prepare o Dila Pump: 2 dosadores em 260 ml, 40 ml a cada 2 h", `1ª refeição: ${first.name} às ${tOf(first)}`, "Meta: 2,6 L de água"];
+      const lines = [`Treino ${nextL} às ${trainTime(times, day)}`, `1ª refeição: ${first.name} às ${tOf(first)}`, "Meta: 2,6 L de água"];
       if (weighDay) lines.unshift("⚖️ Dia de pesagem: pese em jejum antes de comer e faça o check-in");
       msgs.push(["bomdia", "Bom dia! Plano de hoje", lines.join("\n")]);
     }
@@ -68,7 +68,7 @@ export async function GET(req) {
 
     // pré-treino (25 min antes)
     if (!log?.workout_at && inWin(min, toMin(trainTime(times, day)) - 30))
-      msgs.push(["pre", "Dila Pump antes do treino", `Tome uma porção de 40 ml (máx. 1,5 g) agora. Treino ${nextL} às ${trainTime(times, day)}.`]);
+      { if (!checks._pre) msgs.push(["pre", `Dila Pump: ${PREWORKOUT.dose}`, `Tome agora em 260 ml de água gelada. Treino ${nextL} às ${trainTime(times, day)}.`]); }
 
     // treino
     if (!log?.workout_at && inWin(min, toMin(trainTime(times, day))))
