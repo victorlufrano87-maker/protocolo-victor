@@ -231,6 +231,9 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
     .sort((a, b) => toMin(a.time) - toMin(b.time));
 
   const bottle = +(T.bottle || 500);
+  const dilaArr = checks._dila || [], dila = dilaArr.length;
+  const viewing = now >= 24 * 60;
+  const dilaWait = dila && !viewing ? Math.max(0, dilaArr.at(-1) + 120 - now) : 0;
   // cafeína
   const caf = checks._caf || [];
   const cafTotal = caf.reduce((a, b) => a + b, 0);
@@ -317,13 +320,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         ) : (
           <>
             <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b></div>
-            <div className={"item pre" + (checks._pre ? " done" : "")}>
-              <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
-              <div className="t" onClick={() => toggle("_pre", !checks._pre)}>
-                <b><span className="supl">PRÉ</span>{PREWORKOUT.name}: {PREWORKOUT.dose}</b>
-                <div className="s">{PREWORKOUT.how} · tomar às {fmtHM(toMin(trainTime(T, day)) - 25)}</div>
-              </div>
-            </div>
             <div className="row">
               <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Abrir MFIT</a>
               <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
@@ -331,6 +327,15 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
             <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
           </>
         )}
+            <div className="pre-box">
+              <div className="mh"><b><span className="supl">DILA</span>{PREWORKOUT.name}</b><span className="tag num">{dila}/{PREWORKOUT.portions} porções</span></div>
+              <div className="tag">{PREWORKOUT.how}; {PREWORKOUT.pre} (às {fmtHM(toMin(trainTime(T, day)) - 30)}).</div>
+              <div className="row">
+                <button className="pri grow" disabled={dilaWait > 0} onClick={() => { buzz(); saveLog({ checks: { ...checks, _dila: [...(checks._dila || []), now] } }); }}>
+                  {dilaWait > 0 ? `Próxima porção em ${fmtDur(dilaWait)}` : "+ Tomei 40 ml"}</button>
+                {dila > 0 && <button aria-label="Desfazer porção" onClick={() => saveLog({ checks: { ...checks, _dila: (checks._dila || []).slice(0, -1) } })}>−</button>}
+              </div>
+            </div>
       </section>
 
       {/* Cafeína */}
@@ -735,7 +740,8 @@ function Plan({ uid, settings, saveSettings, today, say }) {
 
       <div className="card">
         <h2>Pré-treino</h2>
-        <div className="tag">{PREWORKOUT.name}: <b style={{ color: "var(--fg)" }}>{PREWORKOUT.dose}</b> {PREWORKOUT.how}. {PREWORKOUT.note}</div>
+        <div className="tag">{PREWORKOUT.name}: <b style={{ color: "var(--fg)" }}>{PREWORKOUT.dose}</b>: {PREWORKOUT.how}; {PREWORKOUT.pre}.</div>
+        <div className="tag">{PREWORKOUT.note}</div>
         <div className="tag">Não está no plano do nutricionista: vale avisar o personal que você usa.</div>
       </div>
 
