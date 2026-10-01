@@ -1,4 +1,4 @@
-# Protocolo Victor
+# Protocolo Victor v1
 
 App pessoal de dieta, água e suplementos, com notificações no iPhone. Custo: R$ 0 (Vercel Hobby + Supabase Free).
 
