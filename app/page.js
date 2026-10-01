@@ -307,6 +307,21 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
       </section>
 
+      {/* Pré-treino */}
+      <section className={"card" + (checks._pre ? " complete" : "")}>
+        <div className="mh"><h3>Pré-treino</h3><span className="time">{fmtHM(toMin(trainTime(T, day)) - 30)}</span></div>
+        <div className="item pre" style={{ borderTop: 0 }}>
+          <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
+          <div className="t" onClick={() => toggle("_pre", !checks._pre)}><b>{PREWORKOUT.name}</b></div>
+        </div>
+        <div className="pre-grid">
+          <div><div className="lbl">Quantidade</div><b>2 dosadores</b><span className="tag">10,6 g</span></div>
+          <div><div className="lbl">Quando</div><b>30 min antes</b><span className="tag">treino às {trainTime(T, day)}</span></div>
+          <div><div className="lbl">Misturar em</div><b>260 ml</b><span className="tag">água gelada</span></div>
+        </div>
+        <div className="tag">{PREWORKOUT.rest} Não passar de 10,6 g/dia.</div>
+      </section>
+
       {/* Treino */}
       <section className="card">
         <div className="mh"><h3>Treino</h3><span className="tag num">{trainTime(T, day)}</span></div>
@@ -325,13 +340,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
             <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
           </>
         )}
-            <div className={"item pre" + (checks._pre ? " done" : "")}>
-              <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o Dila Pump" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
-              <div className="t" onClick={() => toggle("_pre", !checks._pre)}>
-                <b><span className="supl">PRÉ</span>{PREWORKOUT.name}: {PREWORKOUT.dose}</b>
-                <div className="s">{workoutToday ? PREWORKOUT.rest : `${PREWORKOUT.how} · às ${fmtHM(toMin(trainTime(T, day)) - 30)}`}</div>
-              </div>
-            </div>
       </section>
 
       {/* Cafeína */}
