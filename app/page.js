@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
+import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
 
@@ -24,6 +25,7 @@ const I = {
   plan: <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7" />,
   check: <path d="m5 12 5 5 9-10" />,
   dumbbell: <path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12" />,
+  camera: <path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
   cart: <path d="M3 4h2l2.5 11h11L21 7H6.5M9 20h.01M17 20h.01" />,
   ext: <path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" />,
 };
@@ -296,6 +298,8 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
           onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+
+      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
 
       {/* Suplementos */}
       <section className="card">
@@ -629,6 +633,8 @@ Feedback: ${feedback || "—"}`;
         <div className="badges">{BADGES.map(([t, d, on]) => <div key={t} className={"bdg" + (on ? " on" : "")}><b>{t}</b><span>{d}</span></div>)}</div>
       </div>
 
+      <Evolution uid={uid} day={day} />
+
       <div className="card">
         <div className="mh"><h2>Últimas 4 semanas</h2><span className="tag">adesão por dia</span></div>
         <div className="cal">
@@ -930,6 +936,94 @@ function PersonalLink({ settings, saveSettings, say }) {
         <div className="row"><a className="btn" href={url} target="_blank" rel="noreferrer">Ver como o personal vê</a>
           <button onClick={() => { const s2 = { ...settings.supplies }; delete s2._token; saveSettings({ supplies: s2 }); say("Link desativado"); }}>Desativar link</button></div>
       </> : <button className="pri" onClick={gen}>Gerar link</button>}
+    </div>
+  );
+}
+
+/* ---------- FOTOS DO DIA ---------- */
+function DailyPhotos({ uid, day, say }) {
+  const [shots, setShots] = useState({}); const [busy, setBusy] = useState(null);
+  const load = useCallback(async () => {
+    const r = {};
+    for (const [t] of PHOTO_TYPES) { const l = await listDaily(uid, t, day, day); if (l.length) r[t] = l.at(-1).url; }
+    setShots(r);
+  }, [uid, day]);
+  useEffect(() => { load(); }, [load]);
+  async function onFile(t, e) {
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+    setBusy(t);
+    try { await saveDaily(uid, day, t, f); buzz(40); say("Foto salva"); await load(); }
+    catch { say("Não consegui salvar a foto. Tente de novo."); }
+    setBusy(null);
+  }
+  const done = PHOTO_TYPES.filter(([t]) => shots[t]).length;
+  return (
+    <section className={"card" + (done === PHOTO_TYPES.length ? " complete" : "")}>
+      <div className="mh"><h3>Fotos do dia</h3><span className="tag num">{done}/{PHOTO_TYPES.length}</span></div>
+      <div className="shots">
+        {PHOTO_TYPES.map(([t, l]) => (
+          <label key={t} className={"shot" + (shots[t] ? " has" : "")}>
+            <input type="file" accept="image/*" capture={t === "rosto" ? "user" : undefined} hidden onChange={(e) => onFile(t, e)} />
+            {shots[t] ? <img src={shots[t]} alt={l} /> : <span className="shot-empty"><Icon n="camera" s={26} />{busy === t ? "Salvando…" : l}</span>}
+            {shots[t] && <span className="shot-lbl">{busy === t ? "Salvando…" : `${l} · refazer`}</span>}
+          </label>
+        ))}
+      </div>
+      <div className="tag">Mesmo lugar, mesma luz e mesma distância todo dia. De manhã, em jejum, fica mais fiel.</div>
+    </section>
+  );
+}
+
+/* ---------- EVOLUÇÃO ---------- */
+function Evolution({ uid, day }) {
+  const [type, setType] = useState("corpo");
+  const [month, setMonth] = useState(day.slice(0, 7));
+  const [list, setList] = useState([]); const [mode, setMode] = useState("carrossel");
+  const [idx, setIdx] = useState(0); const [playing, setPlaying] = useState(false);
+  const [msg, setMsg] = useState("");
+  const from = `${month}-01`, to = addDays(addDays(`${month}-28`, 4).slice(0, 7) + "-01", -1);
+  useEffect(() => { listDaily(uid, type, from, to).then((l) => { setList(l); setIdx(0); }); }, [uid, type, from, to]);
+  useEffect(() => {
+    if (!playing || list.length < 2) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % list.length), 350);
+    return () => clearInterval(t);
+  }, [playing, list.length]);
+  const shift = (n) => { const d = new Date(from + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + n); const m = d.toISOString().slice(0, 7); if (m <= day.slice(0, 7)) setMonth(m); };
+  const lbl = (d) => fmtDay(d, { day: "2-digit", month: "2-digit" });
+
+  async function share() {
+    setMsg("Preparando…");
+    const n = Math.min(10, list.length);
+    const pick = Array.from({ length: n }, (_, i) => list[Math.round((i * (list.length - 1)) / Math.max(1, n - 1))]);
+    try {
+      const files = await Promise.all(pick.map(async (p, i) => new File([await (await fetch(p.url)).blob()], `evolucao-${type}-${String(i + 1).padStart(2, "0")}-${p.day}.jpg`, { type: "image/jpeg" })));
+      if (navigator.canShare?.({ files })) { await navigator.share({ files, title: `Evolução ${month}` }); setMsg(""); }
+      else setMsg("Seu navegador não permite compartilhar arquivos. Abra pelo app na tela de início do iPhone.");
+    } catch { setMsg(""); }
+  }
+
+  return (
+    <div className="card">
+      <div className="mh"><h2>Evolução</h2>
+        <div className="seg">{PHOTO_TYPES.map(([t, l]) => <button key={t} className={type === t ? "on" : ""} onClick={() => setType(t)}>{l.split(" ")[0]}</button>)}</div></div>
+      <div className="mh">
+        <button className="sm" onClick={() => shift(-1)} aria-label="Mês anterior">‹</button>
+        <b>{new Date(from + "T12:00:00Z").toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" })}</b>
+        <button className="sm" onClick={() => shift(1)} aria-label="Próximo mês" disabled={month >= day.slice(0, 7)}>›</button>
+      </div>
+      {list.length === 0 ? <div className="tag">Nenhuma foto neste mês. Tire a primeira em Hoje → Fotos do dia.</div> : <>
+        <div className="seg wide">
+          {[["carrossel", "Carrossel"], ["timelapse", "Timelapse"], ["comparar", "1º × último"]].map(([k, l]) =>
+            <button key={k} className={mode === k ? "on" : ""} onClick={() => { setMode(k); setPlaying(k === "timelapse"); }}>{l}</button>)}
+        </div>
+        {mode === "carrossel" && <div className="carousel">{list.map((p) => <figure key={p.id}><img src={p.url} alt={"Foto " + p.day} loading="lazy" /><figcaption>{lbl(p.day)}</figcaption></figure>)}</div>}
+        {mode === "timelapse" && <figure className="tl-frame" onClick={() => setPlaying(!playing)}>
+          <img src={list[idx]?.url} alt={"Foto " + list[idx]?.day} /><figcaption>{lbl(list[idx]?.day)} · {idx + 1}/{list.length} · {playing ? "toque para pausar" : "toque para tocar"}</figcaption></figure>}
+        {mode === "comparar" && <div className="compare">
+          {[list[0], list.at(-1)].map((p, i) => <figure key={i}><img src={p.url} alt={"Foto " + p.day} /><figcaption>{i ? "Último" : "Primeiro"} · {lbl(p.day)}</figcaption></figure>)}</div>}
+        <button className="pri" onClick={share}>Compartilhar fotos do mês ({Math.min(10, list.length)})</button>
+        <div className="tag">{msg || "Envia até 10 fotos espaçadas pelo mês, em ordem, prontas para um carrossel no Instagram ou para salvar no rolo da câmera."}</div>
+      </>}
     </div>
   );
 }

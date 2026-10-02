@@ -49,6 +49,16 @@ export async function GET(req) {
       msgs.push(["bomdia", "Bom dia! Plano de hoje", lines.join("\n")]);
     }
 
+    // fotos do dia (07:10 e reforço 19:00)
+    for (const h of [7 * 60 + 10, 19 * 60]) {
+      if (inWin(min, h)) {
+        const { data: ph } = await db.from("photos").select("path").eq("user_id", uid).eq("day", day).like("path", `${uid}/daily/%`);
+        const has = (t) => (ph || []).some((p) => p.path.includes(`-${t}-`));
+        const miss = [["rosto", "rosto"], ["corpo", "corpo de frente"]].filter(([t]) => !has(t)).map(([, l]) => l);
+        if (miss.length) msgs.push([`foto-${h}`, "📸 Fotos do dia", `Falta: ${miss.join(" e ")}. Mesmo lugar, luz e distância.`]);
+      }
+    }
+
     for (const m of MEALS) {
       const done = mealIsDone(log, m);
       if (m.workout) {
