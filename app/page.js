@@ -76,19 +76,24 @@ function App({ uid }) {
   const [party, setParty] = useState(false);
 
   const timesRef = useRef({});
+  const weekRef = useRef({});
+  const pending = useRef(0);
+  const chain = useRef(Promise.resolve());
+  const setWeekBoth = (m) => { weekRef.current = m; setWeek(m); };
   const tick = () => { const e = effectiveNow(spNow(), timesRef.current, addDays); setToday(e.day); setNow(e.min); return e; };
   const load = useCallback(async () => {
     const { data: st } = await supabase.from("settings").select("*").eq("user_id", uid).maybeSingle();
     if (st) { setSettings(st); timesRef.current = st.times || {}; }
     const e = tick();
     const { data: logs } = await supabase.from("day_logs").select("*").eq("user_id", uid).gte("day", addDays(e.day, -119));
+    if (pending.current > 0) return; // não sobrescreve o que ainda está salvando
     const map = Object.fromEntries((logs || []).map((l) => [l.day, l]));
-    setWeek(map);
+    setWeekBoth(map);
     // atalho da Siri: ?agua=250
     const q = new URLSearchParams(location.search).get("agua");
     if (q && +q > 0) {
       const cur = map[e.day] || EMPTY, nx = { ...cur, water_ml: (cur.water_ml || 0) + +q };
-      map[e.day] = nx; setWeek({ ...map });
+      map[e.day] = nx; setWeekBoth({ ...map });
       await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: nx.checks || {}, swaps: nx.swaps || {}, water_ml: nx.water_ml, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
       history.replaceState(null, "", "/"); setToast(`+${q} ml de água`); setTimeout(() => setToast(null), 2500);
     }
@@ -106,15 +111,29 @@ function App({ uid }) {
 
   function say(msg) { setToast(msg); clearTimeout(say.t); say.t = setTimeout(() => setToast(null), 2200); }
 
-  async function saveLog(patch) {
-    const before = score(log);
-    const next = { ...log, ...patch }; setWeek((w) => ({ ...w, [day]: next }));
+  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+  function saveLog(patch) {
+    const d = day, cur = weekRef.current[d] || EMPTY;
+    const next = { ...cur, ...patch };
+    if (patch.checks) next.checks = clean({ ...(cur.checks || {}), ...patch.checks });
+    if (patch.swaps) next.swaps = clean({ ...(cur.swaps || {}), ...patch.swaps });
+    setWeekBoth({ ...weekRef.current, [d]: next });
     if (patch.checks) {
-      const m = MEALS.find((m) => !mealDone(m, log.checks) && mealDone(m, next.checks));
+      const m = MEALS.find((m) => !mealIsDone(cur, m) && mealIsDone(next, m));
       if (m) { buzz(40); say(`${m.name} completo`); }
     }
-    if (before < 100 && score(next) === 100) { setParty(true); setTimeout(() => setParty(false), 3500); }
-    await supabase.from("day_logs").upsert({ user_id: uid, day, checks: next.checks, swaps: next.swaps, water_ml: next.water_ml, free_meal: next.free_meal, workout_at: next.workout_at, updated_at: new Date().toISOString() });
+    if (score(cur) < 100 && score(next) === 100) { setParty(true); setTimeout(() => setParty(false), 3500); }
+    pending.current++;
+    chain.current = chain.current.then(async () => {
+      const l = weekRef.current[d] || next; // sempre grava a versão mais recente
+      for (let tries = 0; tries < 3; tries++) {
+        const { error } = await supabase.from("day_logs").upsert({ user_id: uid, day: d, checks: l.checks || {}, swaps: l.swaps || {}, water_ml: l.water_ml || 0, free_meal: !!l.free_meal, workout_at: l.workout_at || null, updated_at: new Date().toISOString() });
+        if (!error) break;
+        if (tries === 2) say("Sem conexão: tente de novo");
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }).catch(() => say("Sem conexão: tente de novo")).finally(() => { pending.current--; });
+    return chain.current;
   }
   async function saveSettings(patch) {
     const next = { ...settings, ...patch }; setSettings(next); timesRef.current = next.times || {};
@@ -159,7 +178,7 @@ function App({ uid }) {
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
       {swapFor && <SwapSheet {...swapFor} addShop={addShop} current={log.swaps?.[swapFor.key]} onClose={() => setSwapFor(null)}
-        onPick={(v) => { const swaps = { ...log.swaps }; if (v) swaps[swapFor.key] = v; else delete swaps[swapFor.key]; saveLog({ swaps }); setSwapFor(null); say(v ? "Alimento trocado" : "Voltou ao original"); }} />}
+        onPick={(v) => { saveLog({ swaps: { [swapFor.key]: v || undefined } }); setSwapFor(null); say(v ? "Alimento trocado" : "Voltou ao original"); }} />}
 
       {toast && <div className="toast" role="status">{toast}</div>}
       {party && <Confetti />}
@@ -215,16 +234,16 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const freeUsedOn = weekDays.find((d) => d !== day && week[d]?.checks?._free);
   const mergesWeek = Array.from({ length: 7 }, (_, i) => addDays(day, -i)).filter((d) => Object.values(week[d]?.checks?._merge || {}).some((v) => v !== "skip")).length;
 
-  const toggle = (k, v) => { buzz(); saveLog({ checks: { ...checks, [k]: v } }); };
+  const toggle = (k, v) => { buzz(); saveLog({ checks: { [k]: v } }); };
   const markAll = (m) => {
-    const c = { ...checks };
+    const c = {};
     [m, ...extrasFor(m)].forEach((x) => x.items.forEach((_, i) => { c[`${x.id}-${i}`] = true; }));
     saveLog({ checks: c });
   };
-  const doMerge = (src, target) => { buzz(30); saveLog({ checks: { ...checks, _merge: { ...merge, [src.id]: target } } }); say(target === "skip" ? `${src.name} pulado` : `${src.name} vai junto com o ${nextOf(src).name}`); };
-  const undoMerge = (src) => { const m2 = { ...merge }; delete m2[src.id]; saveLog({ checks: { ...checks, _merge: m2 } }); };
-  const useFree = (m) => { buzz(40); saveLog({ checks: { ...checks, _free: m.id }, free_meal: true }); say("Refeição livre registrada"); };
-  const undoFree = () => { const c = { ...checks }; delete c._free; saveLog({ checks: c, free_meal: false }); };
+  const doMerge = (src, target) => { buzz(30); saveLog({ checks: { _merge: { ...merge, [src.id]: target } } }); say(target === "skip" ? `${src.name} pulado` : `${src.name} vai junto com o ${nextOf(src).name}`); };
+  const undoMerge = (src) => { const m2 = { ...merge }; delete m2[src.id]; saveLog({ checks: { _merge: m2 } }); };
+  const useFree = (m) => { buzz(40); saveLog({ checks: { _free: m.id }, free_meal: true }); say("Refeição livre registrada"); };
+  const undoFree = () => { saveLog({ checks: { _free: undefined }, free_meal: false }); };
 
   // suplementos do dia em ordem de horário (inclui os que foram para outra refeição)
   const sups = meals.flatMap((m) => m.items.map((it, i) => ({ it, k: `${m.id}-${i}`, time: merge[m.id] && merge[m.id] !== "skip" ? tOf(MEALS.find((x) => x.id === merge[m.id])) : tOf(m) })).filter((x) => x.it.sup))
@@ -253,7 +272,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
     <>
       <PushBanner />
 
-      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { ...checks, _ci: ci } })} />}
+      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} />}
 
       {missedList.map((m) => {
         const nx = nextOf(m);
@@ -275,7 +294,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
 
       {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
           extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
-          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { ...checks, _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
+          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
 
       {/* Suplementos */}
@@ -348,9 +367,9 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         <div className="bar"><i style={{ width: `${Math.min((cafTotal / CAFFEINE_MAX) * 100, 100)}%`, background: cafTotal > CAFFEINE_MAX ? "var(--bad)" : cafTotal >= 400 ? "var(--warn)" : "var(--accent)" }} /></div>
         {cafTotal >= 400 && <div className={"tag " + (cafTotal > CAFFEINE_MAX ? "bad" : "warn")}>{cafTotal > CAFFEINE_MAX ? "Passou do limite de 500 mg do plano." : `Restam ${CAFFEINE_MAX - cafTotal} mg para o limite.`}</div>}
         <div className="chips">
-          {CAFFEINE.map(([n, mg]) => <button key={n} className="chip" onClick={() => { buzz(); saveLog({ checks: { ...checks, _caf: [...caf, mg] } }); }}><span className="num">{mg} mg</span><b>{n}</b></button>)}
+          {CAFFEINE.map(([n, mg]) => <button key={n} className="chip" onClick={() => { buzz(); saveLog({ checks: { _caf: [...caf, mg] } }); }}><span className="num">{mg} mg</span><b>{n}</b></button>)}
         </div>
-        {caf.length > 0 && <button className="link" onClick={() => saveLog({ checks: { ...checks, _caf: caf.slice(0, -1) } })}>Desfazer último</button>}
+        {caf.length > 0 && <button className="link" onClick={() => saveLog({ checks: { _caf: caf.slice(0, -1) } })}>Desfazer último</button>}
       </section>
 
       {/* Linha do dia */}
