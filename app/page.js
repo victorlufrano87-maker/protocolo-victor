@@ -1275,25 +1275,68 @@ function parseBio(search) {
   return Object.keys(out).length ? out : null;
 }
 function BodyComp({ week }) {
+  const [selRaw, setSel] = useState(null);
   const days = Object.keys(week).filter((d) => week[d]?.checks?._bio).sort();
   if (!days.length) return (
     <div className="card"><h2>Composição corporal</h2>
-      <div className="tag">Os dados da sua balança de bioimpedância aparecem aqui. Configure o atalho em Plano → Balança.</div></div>
+      <div className="tag">Os dados da balança (peso, % de gordura, massa magra e IMC) aparecem aqui com a evolução semana a semana. Configure o atalho em Plano → Balança.</div></div>
   );
-  const first = week[days[0]].checks._bio, last = week[days.at(-1)].checks._bio;
-  const serie = (k) => days.filter((d) => week[d].checks._bio[k]).map((d) => ({ day: d, kg: week[d].checks._bio[k] }));
+  // agrupa por semana (segunda a domingo) usando a média da semana
+  const monday = (d) => addDays(d, -((weekday(d) + 6) % 7));
+  const weeks = {};
+  days.forEach((d) => { const w = monday(d); (weeks[w] = weeks[w] || []).push(week[d].checks._bio); });
+  const wkeys = Object.keys(weeks).sort().slice(-12);
+  const avg = (w, k) => { const v = weeks[w].map((b) => b[k]).filter(Boolean); return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null; };
+  const METRICS = [["gordura", "Gordura corporal", "%", "down"], ["magra", "Massa magra", "kg", "up"], ["peso", "Peso", "kg", null], ["imc", "IMC", "", null], ["musculo", "Massa muscular", "kg", "up"], ["visceral", "Gordura visceral", "", "down"]];
+  const shown = METRICS.filter(([k]) => wkeys.some((w) => avg(w, k) !== null));
+  const sel = selRaw || shown[0]?.[0];
+  const cur = METRICS.find(([k]) => k === sel) || shown[0];
+  const serie = wkeys.map((w) => ({ day: w, kg: avg(w, cur[0]) })).filter((p) => p.kg !== null);
+  const fmt = (v) => String(v).replace(".", ",");
   return (
     <div className="card">
-      <div className="mh"><h2>Composição corporal</h2><span className="tag">{fmtDay(days.at(-1), { day: "2-digit", month: "2-digit" })}</span></div>
-      <table><tbody>{BIO.filter(([k]) => last[k]).map(([k, l, u]) => {
-        const d = first[k] && days.length > 1 ? last[k] - first[k] : null;
-        const good = d === null ? "" : (k === "gordura" || k === "visceral" || k === "imc" ? d < 0 : k === "peso" ? "" : d > 0) ? " okc" : "";
-        return <tr key={k}><td>{l}</td><td className="q">{String(last[k]).replace(".", ",")}{u ? ` ${u}` : ""}</td><td className={"tag num" + good}>{d !== null && d !== 0 ? `${d > 0 ? "+" : ""}${d.toFixed(1).replace(".", ",")}` : ""}</td></tr>;
-      })}</tbody></table>
-      {serie("gordura").length > 1 && <><div className="lbl">Gordura corporal (%)</div><LineChart data={serie("gordura")} unit="%" /></>}
-      {serie("magra").length > 1 && <><div className="lbl">Massa magra (kg)</div><LineChart data={serie("magra")} unit=" kg" /></>}
-      {days.length > 1 && <div className="tag">Variação desde {fmtDay(days[0], { day: "2-digit", month: "2-digit" })}. Bioimpedância varia com água e horário: compare sempre em jejum, no mesmo horário.</div>}
+      <div className="mh"><h2>Composição corporal</h2><span className="tag">média por semana</span></div>
+      <div className="bio-tiles">
+        {shown.map(([k, l, u, dir]) => {
+          const s2 = wkeys.map((w) => avg(w, k)).filter((v) => v !== null);
+          const last = s2.at(-1), prev = s2.at(-2), d = prev != null ? Math.round((last - prev) * 10) / 10 : null;
+          const good = d == null || d === 0 || !dir ? "" : (dir === "down" ? d < 0 : d > 0) ? " okc" : " warn";
+          return (
+            <button key={k} className={"bio-tile" + (sel === k ? " on" : "")} onClick={() => setSel(k)}>
+              <span className="lbl">{l}</span>
+              <b className="num">{fmt(last)}{u && <small> {u}</small>}</b>
+              <span className={"tag num" + good}>{d == null ? "1ª semana" : `${d > 0 ? "+" : ""}${fmt(d)} na semana`}</span>
+            </button>
+          );
+        })}
+      </div>
+      {serie.length > 1
+        ? <><div className="lbl">{cur[1]} · semana a semana</div><WeekBars data={serie} unit={cur[2]} dir={cur[3]} /></>
+        : <div className="tag">O gráfico semanal aparece a partir da 2ª semana de pesagens.</div>}
+      {serie.length > 1 && (() => { const t = Math.round((serie.at(-1).kg - serie[0].kg) * 10) / 10; return <div className="tag">Desde a semana de {fmtDay(serie[0].day, { day: "2-digit", month: "2-digit" })}: <b className={cur[3] && t !== 0 ? ((cur[3] === "down" ? t < 0 : t > 0) ? "okc" : "warn") : ""}>{t > 0 ? "+" : ""}{fmt(t)}{cur[2] ? ` ${cur[2]}` : ""}</b>. Pese sempre em jejum, no mesmo horário: bioimpedância varia com água.</div>; })()}
     </div>
+  );
+}
+function WeekBars({ data, unit, dir }) {
+  const W = 330, H = 140, P = 8, B = 22, vals = data.map((p) => p.kg);
+  const lo = Math.min(...vals), hi = Math.max(...vals), pad = Math.max(0.5, (hi - lo) * 0.25);
+  const min = lo - pad, max = hi + pad;
+  const x = (i) => P + 4 + (i * (W - 2 * P - 8)) / Math.max(1, data.length - 1);
+  const y = (v) => 18 + ((max - v) * (H - 18 - B)) / (max - min);
+  const line = data.map((p, i) => `${x(i)},${y(p.kg)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%" }}>
+      <polygon points={`${x(0)},${H - B} ${line} ${x(data.length - 1)},${H - B}`} fill="var(--accent-soft)" />
+      <polyline points={line} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
+      {data.map((p, i) => {
+        const d = i ? p.kg - data[i - 1].kg : 0, good = !dir || !i || d === 0 ? "var(--accent)" : (dir === "down" ? d < 0 : d > 0) ? "var(--ok)" : "var(--warn)";
+        return <g key={p.day}>
+          <circle cx={x(i)} cy={y(p.kg)} r={i === data.length - 1 ? 5 : 3.5} fill={good} />
+          {(i === data.length - 1 || i === 0 || data.length <= 6) && <text x={x(i)} y={y(p.kg) - 9} fontSize="10.5" textAnchor={i === 0 ? "start" : i === data.length - 1 ? "end" : "middle"} fill="var(--fg)">{String(p.kg).replace(".", ",")}{unit === "%" ? "%" : ""}</text>}
+          <text x={x(i)} y={H - 6} fontSize="9.5" textAnchor={i === 0 ? "start" : i === data.length - 1 ? "end" : "middle"} fill="var(--mute)">{p.day.slice(8)}/{p.day.slice(5, 7)}</text>
+        </g>;
+      })}
+    </svg>
   );
 }
 function LineChart({ data, unit }) {
