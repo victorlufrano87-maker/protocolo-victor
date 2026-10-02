@@ -12,6 +12,9 @@ const MFIT_URL = "https://www.mfitpersonal.com.br";
 const score = dayScore;
 const fmtPortion = (p, measure) => p === 1 ? measure : p === 0.5 ? `½ de ${measure}` : `${p}× ${measure}`;
 const b64ToU8 = (b) => { const p = "=".repeat((4 - (b.length % 4)) % 4); const r = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
+const safe = (q) => Promise.resolve(q).catch(() => ({ error: 1 }));
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const buzz = (ms = 15) => { try { navigator.vibrate?.(ms); } catch {} };
 const fmtHM = (m) => `${String(Math.floor((m % 1440) / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const fmtDur = (min) => { const a = Math.abs(min); return a < 60 ? `${a} min` : `${Math.floor(a / 60)}h${a % 60 ? String(a % 60).padStart(2, "0") : ""}`; };
@@ -81,13 +84,46 @@ function App({ uid }) {
   const weekRef = useRef({});
   const pending = useRef(0);
   const chain = useRef(Promise.resolve());
-  const setWeekBoth = (m) => { weekRef.current = m; setWeek(m); };
+  const setWeekBoth = (m) => { weekRef.current = m; setWeek(m); lsSet(`pv_week_${uid}`, m); };
+  const outbox = () => lsGet(`pv_out_${uid}`, []);
+  const setOutbox = (l) => lsSet(`pv_out_${uid}`, l);
+  const [offline, setOffline] = useState(false);
+  async function pushDay(d) {
+    const l = weekRef.current[d]; if (!l) return true;
+    const { error } = await safe(supabase.from("day_logs").upsert({ user_id: uid, day: d, checks: l.checks || {}, swaps: l.swaps || {}, water_ml: l.water_ml || 0, free_meal: !!l.free_meal, workout_at: l.workout_at || null, updated_at: new Date().toISOString() }));
+    return !error;
+  }
+  async function flush() {
+    const days = outbox(); if (!days.length && !lsGet(`pv_setdirty_${uid}`, false)) return;
+    pending.current++;
+    try {
+      const left = [];
+      for (const d of days) if (!(await pushDay(d).catch(() => false))) left.push(d);
+      if (lsGet(`pv_setdirty_${uid}`, false)) {
+        const st = lsGet(`pv_set_${uid}`, null);
+        if (st) { const { error } = await safe(supabase.from("settings").upsert({ user_id: uid, times: st.times, update_date: st.update_date, supplies: st.supplies })); if (!error) lsSet(`pv_setdirty_${uid}`, false); else left.push("_set"); }
+      }
+      setOutbox(left.filter((x) => x !== "_set")); setOffline(left.length > 0);
+    } finally { pending.current--; }
+  }
   const tick = () => { const e = effectiveNow(spNow(), timesRef.current, addDays); setToday(e.day); setNow(e.min); return e; };
   const load = useCallback(async () => {
-    const { data: st } = await supabase.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    if (!Object.keys(weekRef.current).length) {
+      const cw = lsGet(`pv_week_${uid}`, null), cs = lsGet(`pv_set_${uid}`, null);
+      if (cs) { setSettings(cs); timesRef.current = cs.times || {}; }
+      if (cw) { weekRef.current = cw; setWeek(cw); }
+      tick();
+    }
+    await flush();
+    if (outbox().length || lsGet(`pv_setdirty_${uid}`, false)) { setOffline(true); return; } // ainda offline: fica com o que está no celular
+    const { data: st, error: e1 } = await safe(supabase.from("settings").select("*").eq("user_id", uid).maybeSingle());
+    if (e1) { setOffline(true); return; }
+    setOffline(false);
+    if (st) lsSet(`pv_set_${uid}`, st);
     if (st) { setSettings(st); timesRef.current = st.times || {}; }
     const e = tick();
-    const { data: logs } = await supabase.from("day_logs").select("*").eq("user_id", uid).gte("day", addDays(e.day, -119));
+    const { data: logs, error: e2 } = await safe(supabase.from("day_logs").select("*").eq("user_id", uid).gte("day", addDays(e.day, -119)));
+    if (e2) { setOffline(true); return; }
     if (pending.current > 0) return; // não sobrescreve o que ainda está salvando
     const map = Object.fromEntries((logs || []).map((l) => [l.day, l]));
     setWeekBoth(map);
@@ -107,8 +143,9 @@ function App({ uid }) {
     load();
     const f = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", f);
+    const on = () => load(); window.addEventListener("online", on);
     const t = setInterval(tick, 30000);
-    return () => { document.removeEventListener("visibilitychange", f); clearInterval(t); };
+    return () => { document.removeEventListener("visibilitychange", f); window.removeEventListener("online", on); clearInterval(t); };
   }, [load]);
 
   function say(msg) { setToast(msg); clearTimeout(say.t); say.t = setTimeout(() => setToast(null), 2200); }
@@ -125,21 +162,22 @@ function App({ uid }) {
       if (m) { buzz(40); say(`${m.name} completo`); }
     }
     if (score(cur) < 100 && score(next) === 100) { setParty(true); setTimeout(() => setParty(false), 3500); }
+    if (!outbox().includes(d)) setOutbox([...outbox(), d]);
     pending.current++;
     chain.current = chain.current.then(async () => {
-      const l = weekRef.current[d] || next; // sempre grava a versão mais recente
-      for (let tries = 0; tries < 3; tries++) {
-        const { error } = await supabase.from("day_logs").upsert({ user_id: uid, day: d, checks: l.checks || {}, swaps: l.swaps || {}, water_ml: l.water_ml || 0, free_meal: !!l.free_meal, workout_at: l.workout_at || null, updated_at: new Date().toISOString() });
-        if (!error) break;
-        if (tries === 2) say("Sem conexão: tente de novo");
-        await new Promise((r) => setTimeout(r, 800));
+      for (let tries = 0; tries < 2; tries++) {
+        if (await pushDay(d).catch(() => false)) { setOutbox(outbox().filter((x) => x !== d)); if (!outbox().length) setOffline(false); return; }
+        await new Promise((r) => setTimeout(r, 700));
       }
-    }).catch(() => say("Sem conexão: tente de novo")).finally(() => { pending.current--; });
+      setOffline(true); // fica salvo no celular e sincroniza quando voltar a internet
+    }).catch(() => setOffline(true)).finally(() => { pending.current--; });
     return chain.current;
   }
   async function saveSettings(patch) {
     const next = { ...settings, ...patch }; setSettings(next); timesRef.current = next.times || {};
-    await supabase.from("settings").upsert({ user_id: uid, times: next.times, update_date: next.update_date, supplies: next.supplies });
+    lsSet(`pv_set_${uid}`, next); lsSet(`pv_setdirty_${uid}`, true);
+    const { error } = await safe(supabase.from("settings").upsert({ user_id: uid, times: next.times, update_date: next.update_date, supplies: next.supplies }));
+    if (!error) lsSet(`pv_setdirty_${uid}`, false); else setOffline(true);
   }
 
   const s = score(log);
@@ -173,9 +211,10 @@ function App({ uid }) {
         </div>
       </header>
 
+      {offline && <div className="offline">Sem internet: tudo fica salvo no celular e sincroniza sozinho quando a conexão voltar.</div>}
       {viewDay && tab === "hoje" && <div className="card editing"><span>Editando <b>{fmtDay(day, { weekday: "long", day: "2-digit", month: "2-digit" })}</b></span><button className="sm pri" onClick={() => setViewDay(null)}>Voltar para hoje</button></div>}
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
-      {tab === "prog" && <Progress {...{ uid, week, day, settings, onRefresh: load }} />}
+      {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
@@ -274,25 +313,27 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
     <>
       <PushBanner />
 
-      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} />}
+      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} hasMed={!!checks._med} saveMed={(m) => saveLog({ checks: { _med: m } })} />}
 
-      {missedList.map((m) => {
-        const nx = nextOf(m);
+      {missedList.length > 0 && (() => {
+        const tgt = main.find((x) => !done(x) && !merge[x.id] && !missed(x));
         return (
-          <section key={m.id} className="card missed">
-            <div className="lbl warn">Refeição perdida · {tOf(m)}</div>
-            <h3>{m.name}</h3>
-            <div className="tag">Comeu e esqueceu de marcar? Toque em "Já comi". Se perdeu, o plano manda juntar com a próxima refeição ({nx.name}, {tOf(nx)}):</div>
-            <ul className="sugg">{replaceSuggestion(m, nx).map((l) => <li key={l.text} className={l.sup ? "sup" : ""}>{l.text}</li>)}</ul>
-            {mergesWeek >= 2 && <div className="tag warn">Atenção: você já repôs refeições {mergesWeek} vezes nos últimos 7 dias. O plano pede que isso não vire hábito.</div>}
-            <div className="row">
-              <button className="pri grow" onClick={() => doMerge(m, nx.id)}>Repor no {nx.name.toLowerCase()}</button>
-              <button onClick={() => markAll(m)}>Já comi</button>
-            </div>
-            <button className="link" onClick={() => doMerge(m, "skip")}>Pular sem repor</button>
+          <section className="card missed">
+            <div className="lbl warn">{missedList.length === 1 ? "Refeição perdida" : `${missedList.length} refeições perdidas`}</div>
+            {missedList.map((m) => (
+              <div key={m.id} className="miss-item">
+                <div className="mh"><b>{m.name} · {tOf(m)}</b><button className="link" onClick={() => markAll(m)}>Já comi</button></div>
+                {tgt && <ul className="sugg">{replaceSuggestion(m, tgt).map((l) => <li key={l.text} className={l.sup ? "sup" : ""}>{l.text}</li>)}</ul>}
+              </div>
+            ))}
+            {mergesWeek >= 2 && <div className="tag warn">Você já repôs refeições {mergesWeek} vezes nos últimos 7 dias. O plano pede que isso não vire hábito.</div>}
+            {tgt ? <button className="pri" onClick={() => { const c = { _merge: { ...merge } }; missedList.forEach((m) => { c._merge[m.id] = tgt.id; }); buzz(30); saveLog({ checks: c }); say(`Reposição junto com o ${tgt.name.toLowerCase()}`); }}>
+              Repor {missedList.length > 1 ? "tudo " : ""}no {tgt.name.toLowerCase()} ({tOf(tgt)})</button>
+              : <div className="tag">Não há próxima refeição hoje: tome ao menos os suplementos.</div>}
+            <button className="link" onClick={() => { const c = { _merge: { ...merge } }; missedList.forEach((m) => { c._merge[m.id] = "skip"; }); saveLog({ checks: c }); }}>Pular sem repor</button>
           </section>
         );
-      })}
+      })()}
 
       {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
           extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
@@ -302,6 +343,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
 
       {/* Suplementos */}
+      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos" summary={`${sups.length}/${sups.length} tomados`}>
       <section className="card">
         <div className="mh"><h3>Suplementos de hoje</h3><span className="tag num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</span></div>
         <div className="chips">
@@ -312,8 +354,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           ))}
         </div>
       </section>
+      </Fold>
 
       {/* Água */}
+      <Fold done={log.water_ml >= WATER_GOAL} label="Água" summary={`${(log.water_ml / 1000).toFixed(1).replace(".", ",")} L · meta batida`}>
       <section className="card">
         <div className="mh"><h3>Água</h3><span className="num">{(log.water_ml / 1000).toFixed(2).replace(".", ",")} / 2,6 L</span></div>
         <div className="cups">
@@ -329,8 +373,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           <button aria-label="Remover 250 ml" onClick={() => saveLog({ water_ml: Math.max(0, log.water_ml - 250) })}>−</button>
         </div>
       </section>
+      </Fold>
 
       {/* Pré-treino */}
+      <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
       <section className={"card" + (checks._pre ? " complete" : "")}>
         <div className="mh"><h3>Pré-treino</h3><span className="time">{fmtHM(toMin(trainTime(T, day)) - 30)}</span></div>
         <div className="item pre" style={{ borderTop: 0 }}>
@@ -344,8 +390,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
         <div className="tag">{PREWORKOUT.rest} Não passar de 10,6 g/dia.</div>
       </section>
+      </Fold>
 
       {/* Treino */}
+      <Fold done={workoutToday} label={`Treino ${LETTERS[doneIdx]}`} summary={`feito · próximo: ${LETTERS[nextIdx]}`}>
       <section className="card">
         <div className="mh"><h3>Treino</h3><span className="tag num">{trainTime(T, day)}</span></div>
         {workoutToday ? (
@@ -364,8 +412,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           </>
         )}
       </section>
+      </Fold>
 
       {/* Cafeína */}
+      <Fold done={cafTotal < 400} neutral label="Cafeína" summary={`${cafTotal}/${CAFFEINE_MAX} mg · toque para registrar`}>
       <section className="card">
         <div className="mh"><h3>Cafeína</h3><span className={"num" + (cafTotal > CAFFEINE_MAX ? " bad" : cafTotal >= 400 ? " warn" : "")}>{cafTotal} / {CAFFEINE_MAX} mg</span></div>
         <div className="bar"><i style={{ width: `${Math.min((cafTotal / CAFFEINE_MAX) * 100, 100)}%`, background: cafTotal > CAFFEINE_MAX ? "var(--bad)" : cafTotal >= 400 ? "var(--warn)" : "var(--accent)" }} /></div>
@@ -375,6 +425,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
         {caf.length > 0 && <button className="link" onClick={() => saveLog({ checks: { _caf: caf.slice(0, -1) } })}>Desfazer último</button>}
       </section>
+      </Fold>
 
       {/* Linha do dia */}
       <section className="card">
@@ -467,7 +518,7 @@ function Items({ m, checks, swaps, toggle, setSwapFor, extras = [], target }) {
         return (
           <div key={src.id} className="extra">
             <div className="lbl warn">Repor do {src.name.toLowerCase()}</div>
-            {src.items.map((it, i) => <ItemRow key={i} {...{ m: src, it, i, checks, swaps, toggle, setSwapFor }} note={sugg[i]?.text} />)}
+            {src.items.map((it, i) => <ItemRow key={i} {...{ m: src, it, i, checks, swaps, toggle, setSwapFor }} note={sugg[i]?.text?.includes(" some ") ? sugg[i].text : undefined} />)}
           </div>
         );
       })}
@@ -475,10 +526,10 @@ function Items({ m, checks, swaps, toggle, setSwapFor, extras = [], target }) {
   );
 }
 
-function WeighCard({ uid, day, say, hasCheckin, saveCheckin }) {
+function WeighCard({ uid, day, say, hasCheckin, saveCheckin, hasMed, saveMed }) {
   const [kg, setKg] = useState(""); const [saved, setSaved] = useState(false);
   useEffect(() => { supabase.from("weights").select("id").eq("user_id", uid).eq("day", day).then(({ data }) => setSaved(!!data?.length)); }, [uid, day]);
-  if (saved && hasCheckin) return null;
+  if (saved && hasCheckin && hasMed) return null;
   return (
     <section className="card now">
       <div className="lbl now-lbl">Dia de pesagem e check-in</div>
@@ -487,6 +538,7 @@ function WeighCard({ uid, day, say, hasCheckin, saveCheckin }) {
         <div className="row"><input id="wkg" inputMode="decimal" placeholder="kg" value={kg} onChange={(e) => setKg(e.target.value)} style={{ width: 110 }} />
           <button className="pri" onClick={async () => { const v = parseFloat(kg.replace(",", ".")); if (!v) return; await supabase.from("weights").insert({ user_id: uid, day, kg: v }); setSaved(true); buzz(40); say("Peso registrado"); }}>Registrar peso</button></div>
       </>}
+      {!hasMed && <MeasureForm onSave={(m) => { saveMed(m); say("Medidas salvas"); }} />}
       {!hasCheckin && <CheckinForm onSave={(ci) => { saveCheckin(ci); say("Check-in salvo"); }} />}
     </section>
   );
@@ -557,7 +609,7 @@ function PushBanner() {
 }
 
 /* ---------- PROGRESSO ---------- */
-function Progress({ uid, week, day, settings, onRefresh }) {
+function Progress({ uid, week, day, settings, saveLog }) {
   const [weights, setWeights] = useState([]); const [kg, setKg] = useState("");
   const [photos, setPhotos] = useState([]); const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState(""); const [copied, setCopied] = useState(false);
@@ -597,6 +649,8 @@ function Progress({ uid, week, day, settings, onRefresh }) {
   const ciDays = Object.keys(week).filter((d) => week[d]?.checks?._ci).sort();
   const lastCi = ciDays.length ? week[ciDays.at(-1)].checks._ci : null;
   const [ciOpen, setCiOpen] = useState(false);
+  const medDays = Object.keys(week).filter((d) => week[d]?.checks?._med).sort();
+  const lastMed = medDays.length ? week[medDays.at(-1)].checks._med : null;
   const days120 = Array.from({ length: 120 }, (_, i) => addDays(day, i - 119));
   const bestRun = (ok) => { let b = 0, c = 0; days120.forEach((d) => { c = ok(d) ? c + 1 : 0; b = Math.max(b, c); }); return b; };
   const bestDiet = bestRun((d) => score(week[d]) >= 95), bestWater = bestRun((d) => (week[d]?.water_ml || 0) >= WATER_GOAL);
@@ -614,6 +668,7 @@ Peso em jejum: ${last ? String(last.kg).replace(".", ",") + " kg" : "—"} (inic
 Adesão à dieta (14 dias): ${adh}%
 Água média: ${(waterAvg / 1000).toFixed(1).replace(".", ",")} L/dia (meta 2,6 L)
 Treinos (14 dias): ${trained}${lastCi ? `
+Medidas: ${lastMed ? MEAS.map(([k, l]) => lastMed[k] ? `${l.split(" ")[0].toLowerCase()} ${String(lastMed[k]).replace(".", ",")}` : null).filter(Boolean).join(" · ") + " cm" : "—"}
 Check-in (1-5): fome ${lastCi.fome} · energia ${lastCi.energia} · sono ${lastCi.sono} · intestino ${lastCi.intestino} · treinos ${lastCi.treino}` : ""}
 Refeições livres: ${free} em 14 dias
 Feedback: ${feedback || "—"}`;
@@ -648,12 +703,10 @@ Feedback: ${feedback || "—"}`;
       <div className="card">
         <div className="mh"><h2>Check-in semanal</h2>{!ciOpen && <button className="sm" onClick={() => setCiOpen(true)}>Fazer agora</button>}</div>
         {lastCi ? <div className="tag">Último ({fmtDay(ciDays.at(-1), { day: "2-digit", month: "2-digit" })}): {CI_FIELDS.map(([k, l]) => `${l} ${lastCi[k]}`).join(" · ")}</div> : <div className="tag">Nenhum check-in ainda. Ele entra no kit de atualização para o personal.</div>}
-        {ciOpen && <CheckinForm initial={week[day]?.checks?._ci} onSave={async (ci) => {
-          const cur = week[day] || EMPTY;
-          await supabase.from("day_logs").upsert({ user_id: uid, day, checks: { ...(cur.checks || {}), _ci: ci }, swaps: cur.swaps || {}, water_ml: cur.water_ml || 0, free_meal: !!cur.free_meal, workout_at: cur.workout_at || null });
-          setCiOpen(false); onRefresh?.();
-        }} />}
+        {ciOpen && <CheckinForm initial={week[day]?.checks?._ci} onSave={(ci) => { saveLog({ checks: { _ci: ci } }); setCiOpen(false); }} />}
       </div>
+
+      <Measures week={week} day={day} onSave={(med) => saveLog({ checks: { _med: med } })} />
 
       <div className="card">
         <div className="mh"><h2>Peso em jejum</h2><span className="tag num">inicial 72,4 kg</span></div>
@@ -942,35 +995,96 @@ function PersonalLink({ settings, saveSettings, say }) {
 
 /* ---------- FOTOS DO DIA ---------- */
 function DailyPhotos({ uid, day, say }) {
-  const [shots, setShots] = useState({}); const [busy, setBusy] = useState(null);
+  const [shots, setShots] = useState({}); const [ghosts, setGhosts] = useState({});
+  const [busy, setBusy] = useState(null); const [cam, setCam] = useState(null);
   const load = useCallback(async () => {
-    const r = {};
-    for (const [t] of PHOTO_TYPES) { const l = await listDaily(uid, t, day, day); if (l.length) r[t] = l.at(-1).url; }
-    setShots(r);
+    const r = {}, g = {};
+    for (const [t] of PHOTO_TYPES) {
+      const l = await listDaily(uid, t, addDays(day, -60), day);
+      const todays = l.filter((x) => x.day === day), prev = l.filter((x) => x.day < day);
+      if (todays.length) r[t] = todays.at(-1).url;
+      if (prev.length) g[t] = prev.at(-1).url;
+    }
+    setShots(r); setGhosts(g);
   }, [uid, day]);
   useEffect(() => { load(); }, [load]);
-  async function onFile(t, e) {
-    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
-    setBusy(t);
-    try { await saveDaily(uid, day, t, f); buzz(40); say("Foto salva"); await load(); }
+  async function save(t, file) {
+    setBusy(t); setCam(null);
+    try { await saveDaily(uid, day, t, file); buzz(40); say("Foto salva"); await load(); }
     catch { say("Não consegui salvar a foto. Tente de novo."); }
     setBusy(null);
   }
   const done = PHOTO_TYPES.filter(([t]) => shots[t]).length;
   return (
+    <Fold done={done === PHOTO_TYPES.length} label="Fotos do dia" summary="rosto e corpo salvos">
     <section className={"card" + (done === PHOTO_TYPES.length ? " complete" : "")}>
       <div className="mh"><h3>Fotos do dia</h3><span className="tag num">{done}/{PHOTO_TYPES.length}</span></div>
       <div className="shots">
         {PHOTO_TYPES.map(([t, l]) => (
-          <label key={t} className={"shot" + (shots[t] ? " has" : "")}>
-            <input type="file" accept="image/*" capture={t === "rosto" ? "user" : undefined} hidden onChange={(e) => onFile(t, e)} />
+          <button key={t} className={"shot" + (shots[t] ? " has" : "")} onClick={() => setCam(t)}>
             {shots[t] ? <img src={shots[t]} alt={l} /> : <span className="shot-empty"><Icon n="camera" s={26} />{busy === t ? "Salvando…" : l}</span>}
             {shots[t] && <span className="shot-lbl">{busy === t ? "Salvando…" : `${l} · refazer`}</span>}
-          </label>
+          </button>
         ))}
       </div>
-      <div className="tag">Mesmo lugar, mesma luz e mesma distância todo dia. De manhã, em jejum, fica mais fiel.</div>
+      <div className="tag">A câmera mostra a foto anterior transparente para você se alinhar na mesma posição.</div>
     </section>
+    {cam && <CameraSheet type={cam} label={PHOTO_TYPES.find(([t]) => t === cam)[1]} ghost={ghosts[cam]} onClose={() => setCam(null)} onShot={(f) => save(cam, f)} />}
+    </Fold>
+  );
+}
+
+function CameraSheet({ type, label, ghost, onClose, onShot }) {
+  const video = useRef(null); const streamRef = useRef(null);
+  const [facing, setFacing] = useState(type === "rosto" ? "user" : "environment");
+  const [err, setErr] = useState(null); const [opacity, setOpacity] = useState(0.35);
+  const [timer, setTimer] = useState(type === "corpo" ? 10 : 3); const [count, setCount] = useState(0);
+  useEffect(() => {
+    let off = false;
+    (async () => {
+      try {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1440 }, height: { ideal: 1920 } }, audio: false });
+        if (off) { st.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = st; if (video.current) { video.current.srcObject = st; await video.current.play().catch(() => {}); }
+        setErr(null);
+      } catch { setErr("Não consegui abrir a câmera. Libere em Ajustes → Protocolo → Câmera, ou escolha da galeria."); }
+    })();
+    return () => { off = true; };
+  }, [facing]);
+  useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
+  const mirror = facing === "user";
+  function capture() {
+    const v = video.current; if (!v?.videoWidth) return;
+    const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+    const ctx = c.getContext("2d"); if (mirror) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, 0, 0);
+    c.toBlob((b) => b && onShot(new File([b], `${type}.jpg`, { type: "image/jpeg" })), "image/jpeg", 0.9);
+  }
+  function shoot() {
+    if (!timer) return capture();
+    let n = timer; setCount(n);
+    const t = setInterval(() => { n -= 1; setCount(n); buzz(10); if (n <= 0) { clearInterval(t); capture(); } }, 1000);
+  }
+  return (
+    <div className="cam">
+      <div className="cam-top"><b>{label}</b><button className="sm" onClick={onClose}>Fechar</button></div>
+      <div className="cam-view">
+        {err ? <div className="tag cam-err">{err}</div> : <video ref={video} playsInline muted autoPlay style={{ transform: mirror ? "scaleX(-1)" : "none" }} />}
+        {ghost && !err && <img className="ghost" src={ghost} alt="" style={{ opacity }} />}
+        {count > 0 && <div className="countdown">{count}</div>}
+        <div className="cam-grid" aria-hidden="true" />
+      </div>
+      <div className="cam-ctl">
+        {ghost && <label className="row tag">Guia <input id="ghostop" type="range" min="0" max="0.7" step="0.05" value={opacity} onChange={(e) => setOpacity(+e.target.value)} style={{ flex: 1 }} /></label>}
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="seg">{[0, 3, 10].map((t) => <button key={t} className={timer === t ? "on" : ""} onClick={() => setTimer(t)}>{t ? `${t}s` : "Já"}</button>)}</div>
+          <button className="sm" onClick={() => setFacing(facing === "user" ? "environment" : "user")}>Virar câmera</button>
+        </div>
+        <button className="shutter" onClick={shoot} disabled={!!err || count > 0} aria-label="Tirar foto" />
+        <label className="link" style={{ alignSelf: "center" }}><input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onShot(f); }} />Escolher da galeria</label>
+      </div>
+    </div>
   );
 }
 
@@ -1024,6 +1138,52 @@ function Evolution({ uid, day }) {
         <button className="pri" onClick={share}>Compartilhar fotos do mês ({Math.min(10, list.length)})</button>
         <div className="tag">{msg || "Envia até 10 fotos espaçadas pelo mês, em ordem, prontas para um carrossel no Instagram ou para salvar no rolo da câmera."}</div>
       </>}
+    </div>
+  );
+}
+
+/* item concluído vira uma linha compacta (toque para abrir) */
+function Fold({ done, label, summary, neutral, children }) {
+  const [open, setOpen] = useState(false);
+  if (!done || open) return children;
+  return (
+    <button className={"fold" + (neutral ? " neutral" : "")} onClick={() => setOpen(true)}>
+      <span className="dot">{!neutral && <Icon n="check" s={14} />}</span><b>{label}</b><span className="tag">{summary}</span>
+    </button>
+  );
+}
+
+/* ---------- MEDIDAS ---------- */
+const MEAS = [["cintura", "Cintura"], ["abdomen", "Abdômen (umbigo)"], ["quadril", "Quadril"], ["braco", "Braço (contraído)"], ["coxa", "Coxa"]];
+function MeasureForm({ onSave, initial }) {
+  const [m, setM] = useState(initial || {});
+  const val = (k) => m[k] ?? "";
+  return (
+    <div className="ci">
+      <div className="tag">Medidas em cm, com fita, sempre no mesmo ponto. Deixe em branco o que não medir.</div>
+      {MEAS.map(([k, l]) => (
+        <div key={k} className="ci-row"><span>{l}</span>
+          <input id={"med-" + k} inputMode="decimal" placeholder="cm" value={val(k)} onChange={(e) => setM({ ...m, [k]: e.target.value })} style={{ width: 90 }} /></div>
+      ))}
+      <button className="pri" disabled={!MEAS.some(([k]) => parseFloat(String(m[k] || "").replace(",", ".")))} onClick={() => {
+        const out = {}; MEAS.forEach(([k]) => { const v = parseFloat(String(m[k] || "").replace(",", ".")); if (v) out[k] = v; }); onSave(out);
+      }}>Salvar medidas</button>
+    </div>
+  );
+}
+function Measures({ week, day, onSave }) {
+  const [open, setOpen] = useState(false);
+  const days = Object.keys(week).filter((d) => week[d]?.checks?._med).sort();
+  const first = days.length ? week[days[0]].checks._med : null, last = days.length ? week[days.at(-1)].checks._med : null;
+  return (
+    <div className="card">
+      <div className="mh"><h2>Medidas</h2>{!open && <button className="sm" onClick={() => setOpen(true)}>Registrar hoje</button>}</div>
+      {last ? <table><tbody>{MEAS.filter(([k]) => last[k]).map(([k, l]) => {
+        const dlt = first?.[k] ? last[k] - first[k] : 0;
+        return <tr key={k}><td>{l}</td><td className="q">{String(last[k]).replace(".", ",")} cm</td><td className={"tag num" + (dlt < 0 ? " okc" : "")}>{days.length > 1 && first?.[k] ? `${dlt > 0 ? "+" : ""}${dlt.toFixed(1).replace(".", ",")}` : ""}</td></tr>;
+      })}</tbody></table> : <div className="tag">Nenhuma medida ainda. Registre junto com a pesagem semanal: às vezes a balança não mexe, mas a fita sim.</div>}
+      {days.length > 1 && <div className="tag">Variação desde {fmtDay(days[0], { day: "2-digit", month: "2-digit" })}.</div>}
+      {open && <MeasureForm initial={week[day]?.checks?._med} onSave={(m) => { onSave(m); setOpen(false); }} />}
     </div>
   );
 }

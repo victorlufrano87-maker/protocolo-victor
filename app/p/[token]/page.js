@@ -26,6 +26,7 @@ export default async function Personal({ params }) {
   const trains = days.filter((d) => map[d]?.workout_at).length;
   const free = days.filter((d) => map[d]?.checks?._free).length;
   const merges = days.filter((d) => Object.values(map[d]?.checks?._merge || {}).some((v) => v !== "skip")).length;
+  const meds = days.filter((d) => map[d]?.checks?._med).map((d) => [d, map[d].checks._med]);
   const cis = days.filter((d) => map[d]?.checks?._ci).map((d) => [d, map[d].checks._ci]);
   const last = weights?.at(-1);
   const f = (d) => fmtDay(d, { day: "2-digit", month: "2-digit" });
@@ -48,6 +49,11 @@ export default async function Personal({ params }) {
 
       <div className="card"><h2>Peso em jejum</h2>
         {weights?.length ? <table><tbody>{weights.slice(-10).reverse().map((w) => <tr key={w.day + w.kg}><td>{f(w.day)}</td><td className="q">{String(w.kg).replace(".", ",")} kg</td></tr>)}</tbody></table> : <div className="tag">Sem registros.</div>}</div>
+
+      <div className="card"><h2>Medidas (cm)</h2>
+        {meds.length ? <table><thead><tr><td>Dia</td><td>Cint.</td><td>Abd.</td><td>Quad.</td><td>Braço</td><td>Coxa</td></tr></thead><tbody>
+          {meds.map(([d, m]) => <tr key={d}><td>{f(d)}</td>{["cintura", "abdomen", "quadril", "braco", "coxa"].map((k) => <td key={k} className="q">{m[k] ? String(m[k]).replace(".", ",") : "—"}</td>)}</tr>)}
+        </tbody></table> : <div className="tag">Sem medidas no período.</div>}</div>
 
       <div className="card"><h2>Check-ins (1 a 5)</h2>
         {cis.length ? <table><tbody>{cis.map(([d, c]) => <tr key={d}><td>{f(d)}</td><td className="tag">fome {c.fome} · energia {c.energia} · sono {c.sono} · intestino {c.intestino} · treinos {c.treino}</td></tr>)}</tbody></table> : <div className="tag">Sem check-ins no período.</div>}</div>

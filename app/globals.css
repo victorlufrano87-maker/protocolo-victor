@@ -173,3 +173,29 @@ figure figcaption{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6
 .tl-frame{margin:0;position:relative}
 .compare{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .compare figure{margin:0;position:relative}
+
+.fold{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:14px;background:var(--card);border:1px solid var(--ok)}
+.fold .dot{width:22px;height:22px;border-radius:50%;background:var(--ok);color:#06231a;display:grid;place-items:center;flex:none}
+.fold b{flex:none}
+.fold .tag{flex:1;text-align:right;min-width:0}
+.fold.neutral{border-color:var(--line)}
+.fold.neutral .dot{background:var(--line)}
+
+.offline{background:rgba(255,174,61,.12);border:1px solid var(--warn);color:var(--fg);border-radius:12px;padding:10px 12px;font-size:13px}
+
+button.shot{padding:0}
+.cam{position:fixed;inset:0;z-index:40;background:#000;color:#fff;display:flex;flex-direction:column;padding:calc(10px + env(safe-area-inset-top,0px)) 14px calc(14px + env(safe-area-inset-bottom,0px));gap:10px}
+.cam-top{display:flex;justify-content:space-between;align-items:center}
+.cam-view{position:relative;flex:1;border-radius:16px;overflow:hidden;background:#111;min-height:0}
+.cam-view video,.cam-view .ghost{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam-view .ghost{pointer-events:none}
+.cam-grid{position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 33%,rgba(255,255,255,.18) 33%,rgba(255,255,255,.18) calc(33% + 1px),transparent calc(33% + 1px),transparent 66%,rgba(255,255,255,.18) 66%,rgba(255,255,255,.18) calc(66% + 1px),transparent calc(66% + 1px)),linear-gradient(transparent 33%,rgba(255,255,255,.18) 33%,rgba(255,255,255,.18) calc(33% + 1px),transparent calc(33% + 1px),transparent 66%,rgba(255,255,255,.18) 66%,rgba(255,255,255,.18) calc(66% + 1px),transparent calc(66% + 1px))}
+.countdown{position:absolute;inset:0;display:grid;place-items:center;font:700 96px var(--display);color:#fff;text-shadow:0 2px 12px #000}
+.cam-err{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:#ddd}
+.cam-ctl{display:flex;flex-direction:column;gap:10px}
+.shutter{width:72px;height:72px;border-radius:50%;border:5px solid #fff;background:var(--ok);align-self:center;padding:0}
+.cam .seg button{color:#fff}
+
+.okc{color:var(--ok)!important}
+
+.miss-item{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line)}
