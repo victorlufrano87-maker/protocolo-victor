@@ -199,3 +199,5 @@ button.shot{padding:0}
 .okc{color:var(--ok)!important}
 
 .miss-item{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line)}
+
+.sheet .sugg{font-size:15px;gap:8px}

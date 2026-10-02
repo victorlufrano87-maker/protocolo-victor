@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
-import { MEALS, WATER_GOAL, SUPPLIES, PREWORKOUT, stockLeft, effectiveNow, LETTERS, mealTime, trainTime, mealIsDone, dayScore, weekday, weekShop, fmtQty } from "@/lib/plan";
+import { MEALS, WATER_GOAL, SUPPLIES, PREP, WEEK_BASIC, PREWORKOUT, stockLeft, effectiveNow, LETTERS, mealTime, trainTime, mealIsDone, dayScore, weekday, weekShop, fmtQty } from "@/lib/plan";
 import { spNow, toMin, addDays } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +102,26 @@ export async function GET(req) {
       if (missSup.length) lines.push(`Suplementos pendentes: ${missSup.join(", ")}`);
       if (!lines.length) lines.push("Tudo cumprido. Bom descanso!");
       msgs.push(["noite", `Resumo do dia: ${sc}%`, lines.join("\n")]);
+    }
+
+    // hora de dormir (30 min antes)
+    if (times.sleep_on !== false) {
+      const sl = toMin(times.sleep || "23:00");
+      if (inWin(min, sl - 30)) msgs.push(["sono", `Dormir às ${times.sleep || "23:00"}`, "Hora de desacelerar: tela mais escura, sem cafeína. Sono bom = menos fome e treino melhor."]);
+    }
+
+    // marmitas acabando (19:00)
+    if (inWin(min, 19 * 60)) {
+      const prep = st?.supplies?._prep || {};
+      const low = PREP.filter((p) => prep[p.id] !== undefined && prep[p.id] <= 2);
+      if (low.length) msgs.push(["marmitas", "Marmitas acabando", low.map((p) => `${p.name}: ${prep[p.id]}`).join("\n") + "\nProgramar cozinhar amanhã."]);
+    }
+
+    // compras da semana (sábado 09:00)
+    if (wd === 6 && inWin(min, 9 * 60)) {
+      const extra = (st?.supplies?._shop || []).filter((n) => !WEEK_BASIC.includes(n));
+      const lowStock = SUPPLIES.map((s) => [s, stockLeft(s, st?.supplies?._stock?.[s.id], day)]).filter(([, r]) => r && r.days <= 10).map(([s]) => s.name);
+      msgs.push(["compras", "Compras da semana", `Básico: frango 2,8 kg, arroz 1 kg, feijão, aveia, pão integral, requeijão, frutas, folhas.${extra.length ? `\nNa lista: ${extra.slice(0, 6).join(", ")}` : ""}${lowStock.length ? `\nAcabando: ${lowStock.join(", ")}` : ""}\nAba Compras → "Adicionar compra básica da semana".`]);
     }
 
     // meal prep (domingo 10:00)

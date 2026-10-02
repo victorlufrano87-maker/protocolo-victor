@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
-import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
+import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
 
 const EMPTY = { checks: {}, swaps: {}, water_ml: 0, free_meal: false, workout_at: null };
 const CUP = 250, CUPS = Math.ceil(WATER_GOAL / CUP);
@@ -135,6 +135,20 @@ function App({ uid }) {
       await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: nx.checks || {}, swaps: nx.swaps || {}, water_ml: nx.water_ml, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
       history.replaceState(null, "", "/"); setToast(`+${q} ml de água`); setTimeout(() => setToast(null), 2500);
     }
+    // balança (atalho do app Saúde): ?peso=72.4&gordura=18.2&magra=59.1...
+    const bio = parseBio(location.search);
+    if (bio) {
+      const cur = map[e.day] || EMPTY;
+      const nx = { ...cur, checks: { ...(cur.checks || {}), _bio: { ...(cur.checks?._bio || {}), ...bio } } };
+      map[e.day] = nx; setWeekBoth({ ...map });
+      await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: nx.checks, swaps: nx.swaps || {}, water_ml: nx.water_ml || 0, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
+      if (bio.peso) {
+        await supabase.from("weights").delete().eq("user_id", uid).eq("day", e.day);
+        await supabase.from("weights").insert({ user_id: uid, day: e.day, kg: bio.peso });
+      }
+      history.replaceState(null, "", "/");
+      setToast(`Balança importada: ${bio.peso ? String(bio.peso).replace(".", ",") + " kg" : ""}${bio.gordura ? ` · ${String(bio.gordura).replace(".", ",")}% gordura` : ""}`); setTimeout(() => setToast(null), 3500);
+    }
   }, [uid]);
   const day = viewDay || today;
   const now = viewDay ? 24 * 60 : nowMin;
@@ -159,7 +173,16 @@ function App({ uid }) {
     setWeekBoth({ ...weekRef.current, [d]: next });
     if (patch.checks) {
       const m = MEALS.find((m) => !mealIsDone(cur, m) && mealIsDone(next, m));
-      if (m) { buzz(40); say(`${m.name} completo`); }
+      if (m) {
+        buzz(40); say(`${m.name} completo`);
+        const prep = settings.supplies?._prep || {}, used = next.checks._prepUsed || {};
+        const p = PREP.find((x) => x.meals.includes(m.id));
+        if (p && !used[m.id] && !next.checks._out?.[m.id] && (prep[p.id] || 0) > 0 && d === today) {
+          next.checks = { ...next.checks, _prepUsed: { ...used, [m.id]: true } };
+          setWeekBoth({ ...weekRef.current, [d]: next });
+          saveSettings({ supplies: { ...settings.supplies, _prep: { ...prep, [p.id]: prep[p.id] - 1 } } });
+        }
+      }
     }
     if (score(cur) < 100 && score(next) === 100) { setParty(true); setTimeout(() => setParty(false), 3500); }
     if (!outbox().includes(d)) setOutbox([...outbox(), d]);
@@ -337,6 +360,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
 
       {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
           extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
+          onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
           onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
 
@@ -474,7 +498,8 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
 }
 function spNowTime(iso) { const m = spNow(new Date(iso)).min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
 
-function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree, onSnooze }) {
+function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree, onSnooze, onOut }) {
+  const [out, setOut] = useState(false);
   const diff = toMin(time) - now;
   const status = m.workout ? "Agora · pós-treino" : diff > 0 ? `Próxima · em ${fmtDur(diff)}` : diff > -30 ? "Agora" : `Atrasada · ${fmtDur(diff)}`;
   const all = [m, ...extras];
@@ -489,7 +514,18 @@ function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, ext
         <button className="ok big grow" onClick={() => markAll(m)}><Icon n="check" /> Comi tudo</button>
         {diff <= 15 && !m.workout && <button className="snz" onClick={() => onSnooze(m)}>{checks._snooze?.[m.id] ? `Aviso às ${fmtHM(checks._snooze[m.id])}` : "Adiar 15 min"}</button>}
       </div>
-      {!m.workout && !checks._free && !freeBlocked && <button className="link" onClick={onFree}>Usar a refeição livre da semana aqui</button>}
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        {EAT_OUT[m.id] && <button className="link" onClick={() => setOut(true)}>Vou comer fora</button>}
+        {!m.workout && !checks._free && !freeBlocked && <button className="link" onClick={onFree}>Usar refeição livre aqui</button>}
+      </div>
+      {out && <div className="sheet-bg" onClick={() => setOut(false)}><div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="grab" />
+        <div className="mh"><h2>{m.name} fora de casa</h2><button className="sm" onClick={() => setOut(false)}>Fechar</button></div>
+        <ul className="sugg">{EAT_OUT[m.id].map((x) => <li key={x}>{x}</li>)}</ul>
+        {m.items.some((x) => x.sup) && <div className="tag warn">Leve os suplementos: {m.items.filter((x) => x.sup).map((x) => x.short).join(", ")}.</div>}
+        <div className="tag">{PALM}</div>
+        <button className="ok big" onClick={() => { onOut(m); setOut(false); }}><Icon n="check" /> Comi fora seguindo isso</button>
+      </div></div>}
     </section>
   );
 }
@@ -651,6 +687,8 @@ function Progress({ uid, week, day, settings, saveLog }) {
   const [ciOpen, setCiOpen] = useState(false);
   const medDays = Object.keys(week).filter((d) => week[d]?.checks?._med).sort();
   const lastMed = medDays.length ? week[medDays.at(-1)].checks._med : null;
+  const bioDays = Object.keys(week).filter((d) => week[d]?.checks?._bio).sort();
+  const lastBio = bioDays.length ? week[bioDays.at(-1)].checks._bio : null;
   const days120 = Array.from({ length: 120 }, (_, i) => addDays(day, i - 119));
   const bestRun = (ok) => { let b = 0, c = 0; days120.forEach((d) => { c = ok(d) ? c + 1 : 0; b = Math.max(b, c); }); return b; };
   const bestDiet = bestRun((d) => score(week[d]) >= 95), bestWater = bestRun((d) => (week[d]?.water_ml || 0) >= WATER_GOAL);
@@ -668,7 +706,8 @@ Peso em jejum: ${last ? String(last.kg).replace(".", ",") + " kg" : "—"} (inic
 Adesão à dieta (14 dias): ${adh}%
 Água média: ${(waterAvg / 1000).toFixed(1).replace(".", ",")} L/dia (meta 2,6 L)
 Treinos (14 dias): ${trained}${lastCi ? `
-Medidas: ${lastMed ? MEAS.map(([k, l]) => lastMed[k] ? `${l.split(" ")[0].toLowerCase()} ${String(lastMed[k]).replace(".", ",")}` : null).filter(Boolean).join(" · ") + " cm" : "—"}
+${lastBio?.gordura ? `Bioimpedância: gordura ${String(lastBio.gordura).replace(".", ",")}%${lastBio.magra ? ` · massa magra ${String(lastBio.magra).replace(".", ",")} kg` : ""}
+` : ""}Medidas: ${lastMed ? MEAS.map(([k, l]) => lastMed[k] ? `${l.split(" ")[0].toLowerCase()} ${String(lastMed[k]).replace(".", ",")}` : null).filter(Boolean).join(" · ") + " cm" : "—"}
 Check-in (1-5): fome ${lastCi.fome} · energia ${lastCi.energia} · sono ${lastCi.sono} · intestino ${lastCi.intestino} · treinos ${lastCi.treino}` : ""}
 Refeições livres: ${free} em 14 dias
 Feedback: ${feedback || "—"}`;
@@ -705,6 +744,8 @@ Feedback: ${feedback || "—"}`;
         {lastCi ? <div className="tag">Último ({fmtDay(ciDays.at(-1), { day: "2-digit", month: "2-digit" })}): {CI_FIELDS.map(([k, l]) => `${l} ${lastCi[k]}`).join(" · ")}</div> : <div className="tag">Nenhum check-in ainda. Ele entra no kit de atualização para o personal.</div>}
         {ciOpen && <CheckinForm initial={week[day]?.checks?._ci} onSave={(ci) => { saveLog({ checks: { _ci: ci } }); setCiOpen(false); }} />}
       </div>
+
+      <BodyComp week={week} />
 
       <Measures week={week} day={day} onSave={(med) => saveLog({ checks: { _med: med } })} />
 
@@ -780,6 +821,8 @@ function Plan({ uid, settings, saveSettings, today, say }) {
           <div key={m.id} className="mh"><span>{m.name}</span><input id={"tm-" + m.id} type="time" value={T[m.id] || m.time} onChange={(e) => setT(m.id, e.target.value)} /></div>
         ))}
         <div className="mh"><span>Treino</span><input id="tm-treino" type="time" value={T.treino || "18:00"} onChange={(e) => setT("treino", e.target.value)} /></div>
+        <div className="mh"><span>Dormir<div className="tag">aviso 30 min antes para desacelerar</div></span><input id="tm-sleep" type="time" value={T.sleep || "23:00"} onChange={(e) => setT("sleep", e.target.value)} /></div>
+        <div className="mh"><span>Lembrete de dormir</span><label className="switch"><input id="sleep-on" type="checkbox" checked={T.sleep_on !== false} onChange={(e) => setT("sleep_on", e.target.checked)} /><span /></label></div>
       </div>
 
       <div className="card">
@@ -837,6 +880,7 @@ function Plan({ uid, settings, saveSettings, today, say }) {
             {[300, 400, 500, 600, 750, 1000].map((v) => <option key={v} value={v}>{v} ml</option>)}</select></div>
       </div>
 
+      <ScaleShortcut />
       <Shortcuts />
       <PersonalLink {...{ settings, saveSettings, say }} />
 
@@ -864,6 +908,27 @@ function Plan({ uid, settings, saveSettings, today, say }) {
 /* ---------- COMPRAS ---------- */
 const SUP_ITEMS = ["Ômega 3", "Cápsula 1 (manhã)", "Cápsula 2 (jantar)", "Creatina", "Centrum Adulto", "Whey concentrado", "Dila Pump tangerina (pré-treino)"];
 const FOOD_ITEMS = [...new Set(MEALS.flatMap((m) => m.items.filter((it) => it.shop).map((it) => it.shop[0])))].filter((n) => n !== "Whey concentrado");
+
+function Prep({ settings, saveSettings, say }) {
+  const prep = settings.supplies?._prep || {};
+  const set = (id, v) => saveSettings({ supplies: { ...settings.supplies, _prep: { ...prep, [id]: Math.max(0, v) } } });
+  const low = PREP.filter((p) => (prep[p.id] ?? 0) <= 2);
+  return (
+    <div className="card">
+      <div className="mh"><h2>Marmitas na geladeira</h2>{low.length > 0 && <span className="tag warn">cozinhar logo</span>}</div>
+      <div className="tag">Desconta sozinho quando você conclui a refeição. Fez comida? Toque em + (ou +5).</div>
+      {PREP.map((p) => (
+        <div key={p.id} className="stock">
+          <div className="mh"><b>{p.name}</b><span className={"num" + ((prep[p.id] ?? 0) <= 2 ? " warn" : "")} style={{ fontSize: 20 }}>{prep[p.id] ?? 0}</span></div>
+          <div className="row tag"><span style={{ flex: 1 }}>{p.tip}</span>
+            <button className="sm" aria-label="Menos uma" onClick={() => set(p.id, (prep[p.id] ?? 0) - 1)}>−</button>
+            <button className="sm" onClick={() => set(p.id, (prep[p.id] ?? 0) + 1)}>+1</button>
+            <button className="sm pri" onClick={() => { set(p.id, (prep[p.id] ?? 0) + 5); say("Marmitas adicionadas"); }}>+5</button></div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Shopping({ settings, saveSettings, say }) {
   const list = settings.supplies?._shop || [];
@@ -915,6 +980,10 @@ function Shopping({ settings, saveSettings, say }) {
           <button className="pri" onClick={() => { add(txt); setTxt(""); }}>Adicionar</button>
         </div>
       </div>
+
+      <button onClick={() => { const add = WEEK_BASIC.filter((n) => !list.includes(n)); save([...list, ...add]); buzz(30); say(add.length ? `${add.length} itens da semana adicionados` : "A lista da semana já está aí"); }}>+ Adicionar compra básica da semana</button>
+
+      <Prep {...{ settings, saveSettings, say }} />
 
       <div className="tag">O que acabou? Toque para pôr na lista (toque de novo para tirar).</div>
       <Quick title="Suplementos" items={SUP_ITEMS} />
@@ -1184,6 +1253,81 @@ function Measures({ week, day, onSave }) {
       })}</tbody></table> : <div className="tag">Nenhuma medida ainda. Registre junto com a pesagem semanal: às vezes a balança não mexe, mas a fita sim.</div>}
       {days.length > 1 && <div className="tag">Variação desde {fmtDay(days[0], { day: "2-digit", month: "2-digit" })}.</div>}
       {open && <MeasureForm initial={week[day]?.checks?._med} onSave={(m) => { onSave(m); setOpen(false); }} />}
+    </div>
+  );
+}
+
+/* ---------- BALANÇA / BIOIMPEDÂNCIA ---------- */
+const BIO = [
+  ["peso", "Peso", "kg"], ["gordura", "Gordura corporal", "%"], ["magra", "Massa magra", "kg"], ["musculo", "Massa muscular", "kg"],
+  ["agua", "Água corporal", "%"], ["visceral", "Gordura visceral", ""], ["imc", "IMC", ""],
+];
+// aceita "72,4 kg", "72.4", "0,182" (vira 18,2%) etc.
+function parseBio(search) {
+  const q = new URLSearchParams(search); const out = {};
+  BIO.forEach(([k, , u]) => {
+    const raw = q.get(k); if (!raw) return;
+    const m = String(raw).replace(",", ".").match(/-?\d+(\.\d+)?/); if (!m) return;
+    let v = parseFloat(m[0]); if (!isFinite(v) || v <= 0) return;
+    if (u === "%" && v < 1) v *= 100;
+    out[k] = Math.round(v * 10) / 10;
+  });
+  return Object.keys(out).length ? out : null;
+}
+function BodyComp({ week }) {
+  const days = Object.keys(week).filter((d) => week[d]?.checks?._bio).sort();
+  if (!days.length) return (
+    <div className="card"><h2>Composição corporal</h2>
+      <div className="tag">Os dados da sua balança de bioimpedância aparecem aqui. Configure o atalho em Plano → Balança.</div></div>
+  );
+  const first = week[days[0]].checks._bio, last = week[days.at(-1)].checks._bio;
+  const serie = (k) => days.filter((d) => week[d].checks._bio[k]).map((d) => ({ day: d, kg: week[d].checks._bio[k] }));
+  return (
+    <div className="card">
+      <div className="mh"><h2>Composição corporal</h2><span className="tag">{fmtDay(days.at(-1), { day: "2-digit", month: "2-digit" })}</span></div>
+      <table><tbody>{BIO.filter(([k]) => last[k]).map(([k, l, u]) => {
+        const d = first[k] && days.length > 1 ? last[k] - first[k] : null;
+        const good = d === null ? "" : (k === "gordura" || k === "visceral" || k === "imc" ? d < 0 : k === "peso" ? "" : d > 0) ? " okc" : "";
+        return <tr key={k}><td>{l}</td><td className="q">{String(last[k]).replace(".", ",")}{u ? ` ${u}` : ""}</td><td className={"tag num" + good}>{d !== null && d !== 0 ? `${d > 0 ? "+" : ""}${d.toFixed(1).replace(".", ",")}` : ""}</td></tr>;
+      })}</tbody></table>
+      {serie("gordura").length > 1 && <><div className="lbl">Gordura corporal (%)</div><LineChart data={serie("gordura")} unit="%" /></>}
+      {serie("magra").length > 1 && <><div className="lbl">Massa magra (kg)</div><LineChart data={serie("magra")} unit=" kg" /></>}
+      {days.length > 1 && <div className="tag">Variação desde {fmtDay(days[0], { day: "2-digit", month: "2-digit" })}. Bioimpedância varia com água e horário: compare sempre em jejum, no mesmo horário.</div>}
+    </div>
+  );
+}
+function LineChart({ data, unit }) {
+  const W = 320, H = 110, P = 30, vals = data.map((p) => p.kg);
+  const lo = Math.floor(Math.min(...vals) - 0.5), hi = Math.ceil(Math.max(...vals) + 0.5);
+  const x = (i) => P + (i * (W - P - 10)) / Math.max(1, data.length - 1), y = (v) => 10 + ((hi - v) * (H - 30)) / (hi - lo);
+  const line = data.map((p, i) => `${x(i)},${y(p.kg)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%" }}>
+      {[lo, hi].map((v) => <g key={v}><line x1={P} x2={W - 10} y1={y(v)} y2={y(v)} stroke="var(--line)" /><text x="0" y={y(v) + 4} fontSize="10" fill="var(--mute)">{v}</text></g>)}
+      <polyline points={line} fill="none" stroke="var(--accent)" strokeWidth="2.5" />
+      <circle cx={x(data.length - 1)} cy={y(vals.at(-1))} r="4" fill="var(--accent)" />
+      <text x={x(data.length - 1)} y={y(vals.at(-1)) - 8} fontSize="11" textAnchor="end" fill="var(--fg)">{String(vals.at(-1)).replace(".", ",")}{unit}</text>
+    </svg>
+  );
+}
+function ScaleShortcut() {
+  const base = typeof location !== "undefined" ? location.origin : "https://protocolo-victor.vercel.app";
+  const [c, setC] = useState(false);
+  const url = `${base}/?peso=`;
+  return (
+    <div className="card">
+      <h2>Balança (bioimpedância)</h2>
+      <div className="tag">Sua balança manda os dados para o app <b>Saúde</b>. Este atalho pega de lá e joga aqui sozinho.</div>
+      <ol className="steps">
+        <li>No app da balança: ative a sincronização com o <b>Saúde</b> (Apple Health).</li>
+        <li>App <b>Atalhos</b> → <b>+</b> → adicione <b>Encontrar Amostras de Saúde</b>: tipo <b>Peso</b>, ordenar por <b>Data de Início, mais recente</b>, limite <b>1</b>.</li>
+        <li>Repita a ação para <b>Percentual de Gordura Corporal</b> e <b>Massa Corporal Magra</b>.</li>
+        <li>Adicione <b>Abrir URLs</b> e monte: o endereço abaixo + a variável Peso, depois <b>&amp;gordura=</b> + variável Gordura, <b>&amp;magra=</b> + variável Massa Magra.</li>
+        <li>Nome: <b>Pesagem</b>. Para ficar automático: aba <b>Automação</b> → <b>App</b> → escolha o app da balança → <b>For fechado</b> → <b>Executar imediatamente</b> → atalho Pesagem.</li>
+      </ol>
+      <button className="opt" onClick={async () => { try { await navigator.clipboard.writeText(url); setC(true); setTimeout(() => setC(false), 2000); } catch {} }}>
+        <span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{url}<i style={{ color: "var(--mute)" }}>[Peso]&amp;gordura=[Gordura]&amp;magra=[Magra]</i></span><span className="q">{c ? "copiado" : "copiar"}</span></button>
+      <div className="tag">Também aceita: &amp;musculo= &amp;agua= &amp;visceral= &amp;imc=. Resultado: você se pesa, fecha o app da balança e tudo aparece em Progresso.</div>
     </div>
   );
 }
