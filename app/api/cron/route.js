@@ -49,6 +49,12 @@ export async function GET(req) {
       msgs.push(["bomdia", "Bom dia! Plano de hoje", lines.join("\n")]);
     }
 
+    // pesagem: toda segunda + sábado 03/10/2026 (primeira execução), 06:40
+    if ((wd === 1 || day === "2026-10-03") && inWin(min, 6 * 60 + 40)) {
+      const { data: w } = await db.from("weights").select("id").eq("user_id", uid).eq("day", day);
+      if (!w?.length) msgs.push(["pesar", "⚖️ Hora de se pesar", "Em jejum, depois do banheiro e antes de comer ou beber. Pese no OKOK e feche o app: os dados vão sozinhos para o Protocolo."]);
+    }
+
     // fotos do dia (07:10 e reforço 19:00)
     for (const h of [7 * 60 + 10, 19 * 60]) {
       if (inWin(min, h)) {
