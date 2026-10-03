@@ -207,3 +207,18 @@ button.shot{padding:0}
 .bio-tile b{font-size:22px}
 .bio-tile b small{font-size:12px;color:var(--mute)}
 .bio-tile.on{border-color:var(--accent);background:var(--accent-soft)}
+
+.gym{position:fixed;inset:0;z-index:35;background:var(--bg);overflow:auto;padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.gym-list{display:flex;flex-direction:column;gap:10px}
+.gx{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.gx.cur{border-color:var(--accent)}
+.gx.done{border-color:var(--ok);opacity:.7}
+.gx-head{display:flex;gap:10px;align-items:flex-start;text-align:left;background:none;border:0;padding:0;color:var(--fg)}
+.gx-n{width:26px;height:26px;border-radius:50%;background:var(--card2);display:grid;place-items:center;flex:none;font-size:13px}
+.gx.cur .gx-n{background:var(--accent);color:#fff}.gx.done .gx-n{background:var(--ok);color:#06231a}
+.gx-tip{background:var(--card2);border-radius:10px;padding:10px;font-size:14px;line-height:1.45}
+.dots{display:flex;gap:4px;flex:1;flex-wrap:wrap}
+.dots i{width:12px;height:12px;border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--ok)}
+.rest{position:sticky;top:0;z-index:2;background:var(--accent);color:#fff;border:0;font-size:16px;display:flex;gap:8px;align-items:center;justify-content:center}
+.rest .tag{color:#dfe6ff}

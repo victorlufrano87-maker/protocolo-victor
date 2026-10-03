@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
+import { WORKOUTS } from "@/lib/workouts";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
@@ -320,7 +321,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const cafTotal = caf.reduce((a, b) => a + b, 0);
 
   // treino
-  const divs = +(T.divs || 4), nextIdx = +(T.next || 0) % divs;
+  const divs = +(T.divs || 5), nextIdx = +(T.next || 0) % divs;
   const doneIdx = (nextIdx - 1 + divs) % divs;
   async function workoutDone() {
     buzz(60);
@@ -328,6 +329,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
     saveSettings({ times: { ...T, next: (nextIdx + 1) % divs } });
     try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
   }
+  const [gym, setGym] = useState(null);
   async function undoWorkout() { await saveLog({ workout_at: null }); saveSettings({ times: { ...T, next: doneIdx } }); say("Treino desmarcado"); }
 
   const weighDay = T.weigh !== undefined && T.weigh !== "" && +T.weigh === wd;
@@ -379,6 +381,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
       </section>
       </Fold>
+      {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => { setGym(null); workoutDone(); }} />}
 
       {/* Água */}
       <Fold done={log.water_ml >= WATER_GOAL} label="Água" summary={`${(log.water_ml / 1000).toFixed(1).replace(".", ",")} L · meta batida`}>
@@ -427,9 +430,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           </>
         ) : (
           <>
-            <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b></div>
+            <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b>{WORKOUTS[nextIdx] && <span className="tag">· {WORKOUTS[nextIdx].name}</span>}</div>
+            {WORKOUTS[nextIdx] && <button className="pri big" onClick={() => setGym(WORKOUTS[nextIdx])}><Icon n="dumbbell" s={18} /> Começar treino ({WORKOUTS[nextIdx].ex.length} exercícios)</button>}
             <div className="row">
-              <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Abrir MFIT</a>
+              <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> MFIT</a>
               <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
             </div>
             <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
@@ -811,7 +815,7 @@ function Plan({ uid, settings, saveSettings, today, say }) {
   const T = settings.times || {};
   const left = settings.update_date ? Math.round((new Date(settings.update_date) - new Date(spNow().day)) / 864e5) : null;
   const setT = (k, v) => saveSettings({ times: { ...T, [k]: v } });
-  const divs = +(T.divs || 4);
+  const divs = +(T.divs || 5);
 
   return (
     <>
@@ -1372,6 +1376,48 @@ function ScaleShortcut() {
       <button className="opt" onClick={async () => { try { await navigator.clipboard.writeText(url); setC(true); setTimeout(() => setC(false), 2000); } catch {} }}>
         <span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{url}<i style={{ color: "var(--mute)" }}>[Peso]&amp;gordura=[Gordura]&amp;magra=[Magra]</i></span><span className="q">{c ? "copiado" : "copiar"}</span></button>
       <div className="tag">Também aceita: &amp;musculo= &amp;agua= &amp;visceral= &amp;imc=. Resultado: você se pesa, fecha o app da balança e tudo aparece em Progresso.</div>
+    </div>
+  );
+}
+
+/* ---------- TREINO GUIADO ---------- */
+function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
+  const sets = checks._sets || {};
+  const loads = settings.supplies?._loads || {};
+  const [tip, setTip] = useState(null);
+  const [rest, setRest] = useState(0);
+  useEffect(() => { if (rest <= 0) return; const t = setTimeout(() => { setRest(rest - 1); if (rest === 1) buzz(300); }, 1000); return () => clearTimeout(t); }, [rest]);
+  const key = (i) => `${w.id}${i}`;
+  const total = w.ex.reduce((a, e) => a + e.s, 0), done = w.ex.reduce((a, e, i) => a + Math.min(e.s, sets[key(i)] || 0), 0);
+  const cur = w.ex.findIndex((e, i) => (sets[key(i)] || 0) < e.s);
+  function doSet(i, e) { const n = (sets[key(i)] || 0) + 1; buzz(); saveLog({ checks: { _sets: { ...sets, [key(i)]: Math.min(n, e.s) } } }); if (n < e.s || i < w.ex.length - 1) setRest(e.rest || 45); }
+  return (
+    <div className="gym">
+      <div className="mh"><div><div className="lbl">Treino {w.id}</div><h2>{w.name}</h2></div><button className="sm" onClick={onClose}>Fechar</button></div>
+      <div className="bar"><i style={{ width: `${(done / total) * 100}%` }} /></div>
+      <div className="tag">{done}/{total} séries · siga a ordem de cima para baixo · toque no nome para ver como fazer</div>
+      {rest > 0 && <button className="rest" onClick={() => setRest(0)}>Descanso <b className="num">{rest}s</b> <span className="tag">toque para pular</span></button>}
+      <div className="gym-list">
+        {w.ex.map((e, i) => {
+          const n = sets[key(i)] || 0, ok = n >= e.s;
+          return (
+            <div key={i} className={"gx" + (ok ? " done" : "") + (i === cur ? " cur" : "")}>
+              <button className="gx-head" onClick={() => setTip(tip === i ? null : i)}>
+                <span className="gx-n num">{i + 1}</span>
+                <span style={{ flex: 1, minWidth: 0 }}><b>{e.n}</b><div className="tag">{e.s} séries × {e.r} reps · descanso {e.rest}s{e.load ? ` · ${e.load}` : ""}</div></span>
+              </button>
+              {tip === i && <div className="gx-tip">{e.tip}</div>}
+              <div className="row">
+                <div className="dots">{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
+                <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: ev.target.value } } })} style={{ width: 70 }} aria-label="Carga usada" />
+                {!ok ? <button className="ok" onClick={() => doSet(i, e)}>Série {n + 1} feita</button> : <button className="sm" onClick={() => saveLog({ checks: { _sets: { ...sets, [key(i)]: 0 } } })}>Refazer</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <button className="ok big" onClick={onDone}><Icon n="check" /> Terminei o treino</button>
+      <div className="tag">A carga que você digita fica salva para a próxima vez. Na dúvida sobre um aparelho, peça ao instrutor da academia para ajustar na primeira vez.</div>
     </div>
   );
 }
