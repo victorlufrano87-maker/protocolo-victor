@@ -675,9 +675,10 @@ function Progress({ uid, week, day, settings, saveLog }) {
     setBusy(false); e.target.value = ""; loadAll();
   }
 
-  const days14 = Array.from({ length: 14 }, (_, i) => addDays(day, i - 13));
-  const adh = Math.round(days14.reduce((a, d) => a + score(week[d]), 0) / 14);
-  const waterAvg = Math.round(days14.reduce((a, d) => a + (week[d]?.water_ml || 0), 0) / 14);
+  const firstDay = Object.keys(week).sort()[0] || day;
+  const days14 = Array.from({ length: 14 }, (_, i) => addDays(day, i - 13)).filter((d) => d >= firstDay);
+  const adh = Math.round(days14.reduce((a, d) => a + score(week[d]), 0) / Math.max(1, days14.length));
+  const waterAvg = Math.round(days14.reduce((a, d) => a + (week[d]?.water_ml || 0), 0) / Math.max(1, days14.length));
   const free = days14.filter((d) => week[d]?.free_meal).length;
   const trained = days14.filter((d) => week[d]?.workout_at).length;
   let streak = 0; for (let i = 0; i < 120; i++) { if (score(week[addDays(day, -i)]) >= 95) streak++; else if (i > 0) break; }
@@ -703,13 +704,13 @@ function Progress({ uid, week, day, settings, saveLog }) {
 
   const kit = `Atualização — ${fmtDay(day, { day: "2-digit", month: "2-digit", year: "numeric" })}
 Peso em jejum: ${last ? String(last.kg).replace(".", ",") + " kg" : "—"} (inicial 72,4 kg${last ? `, ${(last.kg - START_WEIGHT >= 0 ? "+" : "")}${(last.kg - START_WEIGHT).toFixed(1).replace(".", ",")} kg` : ""})
-Adesão à dieta (14 dias): ${adh}%
+Adesão à dieta (${days14.length} dias): ${adh}%
 Água média: ${(waterAvg / 1000).toFixed(1).replace(".", ",")} L/dia (meta 2,6 L)
-Treinos (14 dias): ${trained}${lastCi ? `
+Treinos (${days14.length} dias): ${trained}${lastCi ? `
 ${lastBio?.gordura ? `Bioimpedância: gordura ${String(lastBio.gordura).replace(".", ",")}%${lastBio.magra ? ` · massa magra ${String(lastBio.magra).replace(".", ",")} kg` : ""}
 ` : ""}Medidas: ${lastMed ? MEAS.map(([k, l]) => lastMed[k] ? `${l.split(" ")[0].toLowerCase()} ${String(lastMed[k]).replace(".", ",")}` : null).filter(Boolean).join(" · ") + " cm" : "—"}
 Check-in (1-5): fome ${lastCi.fome} · energia ${lastCi.energia} · sono ${lastCi.sono} · intestino ${lastCi.intestino} · treinos ${lastCi.treino}` : ""}
-Refeições livres: ${free} em 14 dias
+Refeições livres: ${free} em ${days14.length} dias
 Feedback: ${feedback || "—"}`;
 
   return (
