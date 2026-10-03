@@ -239,6 +239,7 @@ function App({ uid }) {
       {viewDay && tab === "hoje" && <div className="card editing"><span>Editando <b>{fmtDay(day, { weekday: "long", day: "2-digit", month: "2-digit" })}</b></span><button className="sm pri" onClick={() => setViewDay(null)}>Voltar para hoje</button></div>}
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
+      {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
@@ -249,7 +250,7 @@ function App({ uid }) {
       {party && <Confetti />}
 
       <nav>
-        {[["hoje", "Hoje", "today"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
+        {[["hoje", "Hoje", "today"], ["treino", "Treino", "dumbbell"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
           <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); scrollTo(0, 0); }}>
             <span className="nav-ic"><Icon n={ic} s={22} />{k === "compras" && shopCount > 0 && <i className="badge">{shopCount}</i>}</span><span>{l}</span></button>)}
       </nav>
@@ -1419,5 +1420,47 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
       <button className="ok big" onClick={onDone}><Icon n="check" /> Terminei o treino</button>
       <div className="tag">A carga que você digita fica salva para a próxima vez. Na dúvida sobre um aparelho, peça ao instrutor da academia para ajustar na primeira vez.</div>
     </div>
+  );
+}
+
+/* ---------- ABA TREINO ---------- */
+function TrainTab({ log, saveLog, settings, saveSettings }) {
+  const T = settings.times || {};
+  const checks = log.checks || {};
+  const divs = Math.min(+(T.divs || 5), WORKOUTS.length), nextIdx = +(T.next || 0) % divs;
+  const [gym, setGym] = useState(null);
+  const done = !!log.workout_at;
+  const sets = checks._sets || {};
+  async function finish(w) {
+    setGym(null); buzz(60);
+    const idx = WORKOUTS.indexOf(w);
+    await saveLog({ workout_at: new Date().toISOString() });
+    saveSettings({ times: { ...T, next: (idx + 1) % divs } });
+    try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
+  }
+  return (
+    <>
+      <section className="card now">
+        <div className="lbl now-lbl">{done ? "Treino de hoje feito" : `Hoje · ${trainTime(T, spNow().day)}`}</div>
+        <h2 className="now-title">Treino {WORKOUTS[nextIdx].id} · {WORKOUTS[nextIdx].name}</h2>
+        <div className="tag">{WORKOUTS[nextIdx].ex.length} exercícios · pré-treino 30 min antes · siga a ordem A→E, não o dia da semana</div>
+        <button className="pri big" onClick={() => setGym(WORKOUTS[nextIdx])}><Icon n="dumbbell" s={18} /> {done ? "Ver próximo treino" : "Começar treino"}</button>
+      </section>
+      <div className="card">
+        <h3>Todos os treinos</h3>
+        {WORKOUTS.slice(0, divs).map((w, i) => {
+          const tot = w.ex.reduce((a, e) => a + e.s, 0), d = w.ex.reduce((a, e, k) => a + Math.min(e.s, sets[`${w.id}${k}`] || 0), 0);
+          return (
+            <button key={w.id} className="tl-head" onClick={() => setGym(w)}>
+              <span className={"gx-n num" + (i === nextIdx ? " nx" : "")}>{w.id}</span>
+              <span className="tl-name">{w.name}<div className="tag">{w.ex.map((e) => e.n.split(" (")[0]).slice(0, 3).join(" · ")}…</div></span>
+              <span className="tag num">{d ? `${d}/${tot}` : i === nextIdx ? "próximo" : `${w.ex.length} ex.`}</span>
+            </button>
+          );
+        })}
+        <div className="tag">Toque em qualquer treino para ver os exercícios, como fazer cada um e registrar as cargas.</div>
+      </div>
+      {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => finish(gym)} />}
+    </>
   );
 }

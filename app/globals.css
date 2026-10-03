@@ -222,3 +222,6 @@ button.shot{padding:0}
 .dots i.on{background:var(--ok)}
 .rest{position:sticky;top:0;z-index:2;background:var(--accent);color:#fff;border:0;font-size:16px;display:flex;gap:8px;align-items:center;justify-content:center}
 .rest .tag{color:#dfe6ff}
+
+.gx-n.nx{background:var(--accent);color:#fff}
+nav button span{font-size:10.5px}
