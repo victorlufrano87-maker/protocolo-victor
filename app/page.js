@@ -1407,7 +1407,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
                 <span className="gx-n num">{i + 1}</span>
                 <span style={{ flex: 1, minWidth: 0 }}><b>{e.n}</b><div className="tag">{e.s} séries × {e.r} reps · descanso {e.rest}s{e.load ? ` · ${e.load}` : ""}</div></span>
               </button>
-              {tip === i && <div className="gx-tip">{e.tip}</div>}
+              {tip === i && <div className="gx-tip">{e.img && <img className="gx-img" src={`/ex/${e.img}.jpg`} alt={e.n} loading="lazy" />}{e.tip}</div>}
               <div className="row">
                 <div className="dots">{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
                 <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: ev.target.value } } })} style={{ width: 70 }} aria-label="Carga usada" />
