@@ -239,7 +239,7 @@ function App({ uid }) {
       {viewDay && tab === "hoje" && <div className="card editing"><span>Editando <b>{fmtDay(day, { weekday: "long", day: "2-digit", month: "2-digit" })}</b></span><button className="sm pri" onClick={() => setViewDay(null)}>Voltar para hoje</button></div>}
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
-      {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings }} />}
+      {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings, week, day }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
@@ -326,7 +326,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const doneIdx = (nextIdx - 1 + divs) % divs;
   async function workoutDone() {
     buzz(60);
-    await saveLog({ workout_at: new Date().toISOString() });
+    await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: LETTERS[nextIdx] } });
     saveSettings({ times: { ...T, next: (nextIdx + 1) % divs } });
     try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
   }
@@ -1424,7 +1424,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
 }
 
 /* ---------- ABA TREINO ---------- */
-function TrainTab({ log, saveLog, settings, saveSettings }) {
+function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
   const T = settings.times || {};
   const checks = log.checks || {};
   const divs = Math.min(+(T.divs || 5), WORKOUTS.length), nextIdx = +(T.next || 0) % divs;
@@ -1434,10 +1434,16 @@ function TrainTab({ log, saveLog, settings, saveSettings }) {
   async function finish(w) {
     setGym(null); buzz(60);
     const idx = WORKOUTS.indexOf(w);
-    await saveLog({ workout_at: new Date().toISOString() });
+    await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: w.id } });
     saveSettings({ times: { ...T, next: (idx + 1) % divs } });
     try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
   }
+  // treinos feitos nesta semana (segunda a domingo)
+  const mon = addDays(day, -((weekday(day) + 6) % 7));
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter((d) => d <= day);
+  const doneWeek = {};
+  weekDays.forEach((d) => { const l = week[d]; if (l?.workout_at) doneWeek[l.checks?._wk || "?"] = d; });
+  const nDone = weekDays.filter((d) => week[d]?.workout_at).length;
   return (
     <>
       <section className="card now">
@@ -1447,6 +1453,15 @@ function TrainTab({ log, saveLog, settings, saveSettings }) {
         <button className="pri big" onClick={() => setGym(WORKOUTS[nextIdx])}><Icon n="dumbbell" s={18} /> {done ? "Ver próximo treino" : "Começar treino"}</button>
       </section>
       <div className="card">
+        <div className="mh"><h3>Esta semana</h3><span className="tag num">{nDone} treino{nDone === 1 ? "" : "s"}</span></div>
+        <div className="week">
+          {Array.from({ length: 7 }, (_, i) => addDays(mon, i)).map((d) => {
+            const l = week[d], did = !!l?.workout_at;
+            return <div key={d} className={"d" + (did ? " full" : "") + (d === day ? " today" : "")}>{fmtDay(d, { weekday: "short" }).slice(0, 3)}<b>{did ? (l.checks?._wk || "✓") : "·"}</b></div>;
+          })}
+        </div>
+      </div>
+      <div className="card">
         <h3>Todos os treinos</h3>
         {WORKOUTS.slice(0, divs).map((w, i) => {
           const tot = w.ex.reduce((a, e) => a + e.s, 0), d = w.ex.reduce((a, e, k) => a + Math.min(e.s, sets[`${w.id}${k}`] || 0), 0);
@@ -1454,7 +1469,7 @@ function TrainTab({ log, saveLog, settings, saveSettings }) {
             <button key={w.id} className="tl-head" onClick={() => setGym(w)}>
               <span className={"gx-n num" + (i === nextIdx ? " nx" : "")}>{w.id}</span>
               <span className="tl-name">{w.name}<div className="tag">{w.ex.map((e) => e.n.split(" (")[0]).slice(0, 3).join(" · ")}…</div></span>
-              <span className="tag num">{d ? `${d}/${tot}` : i === nextIdx ? "próximo" : `${w.ex.length} ex.`}</span>
+              <span className={"tag num" + (doneWeek[w.id] ? " okc" : "")}>{doneWeek[w.id] ? `✓ ${fmtDay(doneWeek[w.id], { weekday: "short" }).slice(0, 3)}` : d ? `${d}/${tot}` : i === nextIdx ? "próximo" : `${w.ex.length} ex.`}</span>
             </button>
           );
         })}
