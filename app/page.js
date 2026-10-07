@@ -1405,7 +1405,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
             <div key={i} className={"gx" + (ok ? " done" : "") + (i === cur ? " cur" : "")}>
               <button className="gx-head" onClick={() => setTip(tip === i ? null : i)}>
                 <span className="gx-n num">{i + 1}</span>
-                <span style={{ flex: 1, minWidth: 0 }}><b>{e.n}</b><div className="tag">{e.s} séries × {e.r} reps · descanso {e.rest}s{e.load ? ` · ${e.load}` : ""}</div></span>
+                <span style={{ flex: 1, minWidth: 0 }}>{e.fin && <span className="supl">FINAL</span>}<b>{e.n}</b><div className="tag">{e.r === "20 min" ? "20 min" : `${e.s} séries × ${e.r}${/s|lado/.test(String(e.r)) ? "" : " reps"}`}{e.rest ? ` · descanso ${e.rest}s` : ""}{e.load ? ` · ${e.load}` : ""}</div></span>
               </button>
               {tip === i && <div className="gx-tip">{e.img && <img className="gx-img" src={`/ex/${e.img}.jpg`} alt={e.n} loading="lazy" />}{e.tip}</div>}
               <div className="row">
