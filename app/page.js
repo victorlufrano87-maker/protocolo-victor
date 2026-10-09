@@ -11,7 +11,7 @@ const CUP = 250, CUPS = Math.ceil(WATER_GOAL / CUP);
 const MFIT_URL = "https://www.mfitpersonal.com.br";
 
 const score = dayScore;
-const fmtPortion = (p, measure) => p === 1 ? measure : p === 0.5 ? `½ de ${measure}` : `${p}× ${measure}`;
+const fmtPortion = (p, measure) => p === 1 ? measure : p === 0.5 ? `½ de ${measure}` : `${String(p).replace(".", ",")}× ${measure}`;
 const b64ToU8 = (b) => { const p = "=".repeat((4 - (b.length % 4)) % 4); const r = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
 const safe = (q) => Promise.resolve(q).catch(() => ({ error: 1 }));
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -239,7 +239,7 @@ function App({ uid }) {
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
           <h1>Protocolo Victor</h1>
-          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · 2.239 kcal · 199 g PTN`}</div>
+          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · ~2.010 kcal · 199 g PTN`}</div>
         </div>
       </header>
 
