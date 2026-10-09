@@ -226,3 +226,9 @@ button.shot{padding:0}
 .gx-n.nx{background:var(--accent);color:#fff}
 nav button span{font-size:10.5px}
 .gx-img{width:100%;border-radius:8px;margin-bottom:8px;display:block;background:#fff}
+
+.goals{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.goals>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.goals b{font-size:20px}
+.gbar{display:block;height:6px;border-radius:9px;background:var(--line);overflow:hidden}
+.gbar i{display:block;height:100%;background:var(--ok)}

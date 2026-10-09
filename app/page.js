@@ -128,6 +128,14 @@ function App({ uid }) {
     if (pending.current > 0) return; // não sobrescreve o que ainda está salvando
     const map = Object.fromEntries((logs || []).map((l) => [l.day, l]));
     setWeekBoth(map);
+    // atalho "Tomei os suplementos": ?sup=1 marca os suplementos de até 60 min à frente
+    if (new URLSearchParams(location.search).get("sup")) {
+      const cur = map[e.day] || EMPTY, c = { ...(cur.checks || {}) }, T2 = st?.times || {}; let n = 0;
+      MEALS.forEach((m) => { if (m.workout || toMin(mealTime(m, T2, e.day)) > e.min + 60) return; m.items.forEach((it, i) => { if (it.sup && !c[`${m.id}-${i}`]) { c[`${m.id}-${i}`] = true; n++; } }); });
+      const nx = { ...cur, checks: c }; map[e.day] = nx; setWeekBoth({ ...map });
+      await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: c, swaps: nx.swaps || {}, water_ml: nx.water_ml || 0, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
+      history.replaceState(null, "", "/"); setToast(n ? `${n} suplemento(s) marcado(s)` : "Nenhum suplemento pendente agora"); setTimeout(() => setToast(null), 2500);
+    }
     // atalho da Siri: ?agua=250
     const q = new URLSearchParams(location.search).get("agua");
     if (q && +q > 0) {
@@ -231,7 +239,7 @@ function App({ uid }) {
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
           <h1>Protocolo Victor</h1>
-          <div className="tag">{s === 100 ? "Dia 100% cumprido" : "Dr. Victor Rocha · 2.239 kcal · 199 g PTN"}</div>
+          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · 2.239 kcal · 199 g PTN`}</div>
         </div>
       </header>
 
@@ -338,6 +346,17 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   return (
     <>
       <PushBanner />
+      {(() => {
+        const mon2 = addDays(day, -((weekday(day) + 6) % 7));
+        const ds = Array.from({ length: 7 }, (_, i) => addDays(mon2, i)).filter((d) => d <= day);
+        const good = ds.filter((d) => dayScore(week[d]) >= 90).length, tr = ds.filter((d) => week[d]?.workout_at).length;
+        return (
+          <div className="goals">
+            <div><span className="lbl">Dieta 90%+</span><b className="num">{good}/7</b><i className="gbar"><i style={{ width: `${(good / 7) * 100}%` }} /></i></div>
+            <div><span className="lbl">Treinos</span><b className="num">{tr}/5</b><i className="gbar"><i style={{ width: `${Math.min(tr / 5, 1) * 100}%` }} /></i></div>
+          </div>
+        );
+      })()}
 
       {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} hasMed={!!checks._med} saveMed={(m) => saveLog({ checks: { _med: m } })} />}
 
@@ -1039,13 +1058,14 @@ function Shortcuts() {
   const copy = async (t) => { try { await navigator.clipboard.writeText(t); setC(t); setTimeout(() => setC(null), 2000); } catch {} };
   return (
     <div className="card">
-      <h2>Atalho "Bebi água" (Siri)</h2>
+      <h2>Atalhos (Siri / tela de início)</h2>
+      <div className="tag"><b>"Tomei os suplementos"</b> marca todos os suplementos do horário atual. <b>"Bebi água"</b> soma 250 ou 500 ml.</div>
       <ol className="steps">
         <li>Abra o app <b>Atalhos</b> do iPhone → <b>+</b> → <b>Adicionar Ação</b> → busque <b>Abrir URLs</b></li>
         <li>Cole o endereço abaixo e dê o nome <b>Bebi água</b></li>
         <li>Diga "E aí Siri, bebi água", ou adicione o atalho na tela de início / Toque Atrás (Ajustes → Acessibilidade → Toque)</li>
       </ol>
-      {[250, 500].map((v) => { const u = `${base}/?agua=${v}`; return <button key={v} className="opt" onClick={() => copy(u)}><span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{u}</span><span className="q">{c === u ? "copiado" : "copiar"}</span></button>; })}
+      {[["sup", 1], ["agua", 250], ["agua", 500]].map(([k, v]) => { const u = `${base}/?${k}=${v}`; return <button key={v} className="opt" onClick={() => copy(u)}><span className="num" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{u}</span><span className="q">{c === u ? "copiado" : "copiar"}</span></button>; })}
     </div>
   );
 }

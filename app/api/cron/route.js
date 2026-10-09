@@ -90,6 +90,25 @@ export async function GET(req) {
     if (!log?.workout_at && inWin(min, toMin(trainTime(times, day))))
       msgs.push(["treino", `Hora do treino ${nextL}`, 'Abra o MFIT. Ao terminar, toque em "Terminei o treino" para liberar o pós-treino.']);
 
+    // suplementos pendentes: reforço 30 e 60 min depois do horário
+    for (const m of MEALS) {
+      if (m.workout || checks._free === m.id) continue;
+      const tgt = merge[m.id] && merge[m.id] !== "skip" ? MEALS.find((x) => x.id === merge[m.id]) : m;
+      if (merge[m.id] === "skip") continue;
+      const pend = m.items.map((it, i) => ({ it, k: `${m.id}-${i}` })).filter(({ it, k }) => it.sup && !checks[k]);
+      if (!pend.length) continue;
+      const t = toMin(tOf(tgt)), names = pend.map(({ it }) => it.short).join(", ");
+      for (const extra of [30, 60]) if (inWin(min, t + extra, 5)) msgs.push([`sup-${m.id}-${extra}`, "💊 Falta tomar", `${names} (${m.name.toLowerCase()}). Já tomou? Marque no app.`]);
+    }
+
+    // treino não feito às 20:00 (se a semana ainda não fechou 5 treinos)
+    if (!log?.workout_at && inWin(min, 20 * 60)) {
+      const mon = addDays(day, -((wd + 6) % 7));
+      const { data: wl } = await db.from("day_logs").select("workout_at").eq("user_id", uid).gte("day", mon).lte("day", day);
+      const n = (wl || []).filter((x) => x.workout_at).length;
+      if (n < 5) msgs.push(["treino-20", `Treino ${nextL} ainda não feito`, `Semana: ${n}/5 treinos. Ainda dá tempo? Se não, o treino ${nextL} fica para amanhã.`]);
+    }
+
     // água no ritmo
     const water = log?.water_ml || 0;
     for (const h of [10, 12, 14, 16, 18, 20]) {
