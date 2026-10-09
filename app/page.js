@@ -739,6 +739,7 @@ Feedback: ${feedback || "—"}`;
 
   return (
     <>
+      <GoalCard weights={weights} week={week} day={day} />
       <WeighReport weights={weights} week={week} day={day} />
 
       <div className="card">
@@ -1569,6 +1570,35 @@ function WeighReport({ weights, week, day }) {
       {ok.length > 0 && <ul className="sugg okl">{ok.map((x) => <li key={x}>{x}</li>)}</ul>}
       {fix.length > 0 && <><div className="lbl warn">O que ajustar</div><ul className="sugg">{fix.map((x) => <li key={x}>{x}</li>)}</ul></>}
       <div className="tag">Orientação automática a partir dos seus registros. Mudanças no plano (calorias, treino) são com o personal.</div>
+    </div>
+  );
+}
+
+/* ---------- META ATÉ A VIRADA ---------- */
+const GOAL = { start: "2026-10-09", end: "2026-12-31", kgWeek: 0.5, fatWeek: 0.35, waistWeek: 0.5 };
+function GoalCard({ weights, week, day }) {
+  const wk = (d) => Math.floor((new Date(d + "T12:00:00Z") - new Date(GOAL.start + "T12:00:00Z")) / (7 * 864e5));
+  const totalW = wk(GOAL.end) + 1, nowW = Math.max(0, wk(day));
+  const left = Math.max(0, Math.round((new Date(GOAL.end + "T12:00:00Z") - new Date(day + "T12:00:00Z")) / 864e5));
+  const base = weights.filter((w) => w.day <= GOAL.start).at(-1) || weights[0];
+  const bio = Object.keys(week).filter((d) => week[d]?.checks?._bio?.gordura).sort();
+  const fat0 = bio.find((d) => d >= addDays(GOAL.start, -7)), fatNow = bio.at(-1);
+  const waist = Object.keys(week).filter((d) => week[d]?.checks?._med?.cintura).sort();
+  const f1 = (v) => String(Math.round(v * 10) / 10).replace(".", ",");
+  const rows = [];
+  if (base) { const tgt = base.kg - GOAL.kgWeek * nowW, cur = weights.at(-1).kg, end = base.kg - GOAL.kgWeek * totalW; rows.push(["Peso", f1(cur) + " kg", f1(tgt) + " kg", f1(end) + " kg", cur <= tgt + 0.3]); }
+  if (fat0) { const b = week[fat0].checks._bio.gordura, tgt = b - GOAL.fatWeek * nowW, cur = week[fatNow].checks._bio.gordura; rows.push(["Gordura", f1(cur) + "%", f1(tgt) + "%", f1(b - GOAL.fatWeek * totalW) + "%", cur <= tgt + 0.3]); }
+  if (waist.length) { const b = week[waist[0]].checks._med.cintura, cur = week[waist.at(-1)].checks._med.cintura, tgt = b - GOAL.waistWeek * nowW; rows.push(["Cintura", f1(cur) + " cm", f1(tgt) + " cm", f1(b - GOAL.waistWeek * totalW) + " cm", cur <= tgt + 0.5]); }
+  const onTrack = rows.length && rows.every((r) => r[4]);
+  return (
+    <div className="card">
+      <div className="mh"><h2>Meta até a virada</h2><span className="tag num">{left} dias · semana {Math.min(nowW + 1, totalW)}/{totalW}</span></div>
+      <div className="bar"><i style={{ width: `${Math.min(100, ((nowW + 1) / totalW) * 100)}%`, background: "var(--ok)" }} /></div>
+      {rows.length ? <table><thead><tr><td></td><td className="tag">Agora</td><td className="tag">Alvo hoje</td><td className="tag">31/12</td></tr></thead><tbody>
+        {rows.map(([l, c, t, e, ok]) => <tr key={l}><td>{l}</td><td className={"q" + (ok ? " okc" : " warn")}>{c}</td><td className="q">{t}</td><td className="q">{e}</td></tr>)}
+      </tbody></table> : <div className="tag">Pese-se e meça a cintura para o app calcular seus alvos semanais.</div>}
+      {rows.length > 0 && <div className="verdict">{onTrack ? "No ritmo da meta. Mantenha a constância." : "Abaixo do ritmo nesta semana: veja o Relatório da pesagem para saber o que ajustar."}</div>}
+      <div className="tag">Ritmo saudável: ~0,5 kg e ~0,5 cm de cintura por semana, preservando músculo. Mais rápido que isso costuma custar massa magra. Ajustes de calorias e treino são com o personal.</div>
     </div>
   );
 }
