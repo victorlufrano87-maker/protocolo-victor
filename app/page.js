@@ -1252,7 +1252,7 @@ function Fold({ done, label, summary, neutral, children }) {
 }
 
 /* ---------- MEDIDAS ---------- */
-const MEAS = [["cintura", "Cintura"], ["abdomen", "Abdômen (umbigo)"], ["quadril", "Quadril"], ["braco", "Braço (contraído)"], ["coxa", "Coxa"]];
+const MEAS = [["cintura", "Cintura"], ["abdomen", "Abdômen (umbigo)"], ["quadril", "Quadril"], ["peito", "Peito (linha dos mamilos)"], ["ombro", "Ombros (contorno)"], ["braco", "Braço (contraído)"], ["coxa", "Coxa"]];
 function MeasureForm({ onSave, initial }) {
   const [m, setM] = useState(initial || {});
   const val = (k) => m[k] ?? "";
@@ -1278,7 +1278,7 @@ function Measures({ week, day, onSave }) {
       <div className="mh"><h2>Medidas</h2>{!open && <button className="sm" onClick={() => setOpen(true)}>Registrar hoje</button>}</div>
       {last ? <table><tbody>{MEAS.filter(([k]) => last[k]).map(([k, l]) => {
         const dlt = first?.[k] ? last[k] - first[k] : 0;
-        return <tr key={k}><td>{l}</td><td className="q">{String(last[k]).replace(".", ",")} cm</td><td className={"tag num" + (dlt < 0 ? " okc" : "")}>{days.length > 1 && first?.[k] ? `${dlt > 0 ? "+" : ""}${dlt.toFixed(1).replace(".", ",")}` : ""}</td></tr>;
+        return <tr key={k}><td>{l}</td><td className="q">{String(last[k]).replace(".", ",")} cm</td><td className={"tag num" + ((["peito", "ombro", "braco"].includes(k) ? dlt > 0 : dlt < 0) ? " okc" : "")}>{days.length > 1 && first?.[k] ? `${dlt > 0 ? "+" : ""}${dlt.toFixed(1).replace(".", ",")}` : ""}</td></tr>;
       })}</tbody></table> : <div className="tag">Nenhuma medida ainda. Registre junto com a pesagem semanal: às vezes a balança não mexe, mas a fita sim.</div>}
       {days.length > 1 && <div className="tag">Variação desde {fmtDay(days[0], { day: "2-digit", month: "2-digit" })}.</div>}
       {open && <MeasureForm initial={week[day]?.checks?._med} onSave={(m) => { onSave(m); setOpen(false); }} />}

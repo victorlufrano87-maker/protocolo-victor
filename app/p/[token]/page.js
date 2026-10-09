@@ -57,8 +57,8 @@ export default async function Personal({ params }) {
         </tbody></table> : <div className="tag">Sem dados de balança no período.</div>}</div>
 
       <div className="card"><h2>Medidas (cm)</h2>
-        {meds.length ? <table><thead><tr><td>Dia</td><td>Cint.</td><td>Abd.</td><td>Quad.</td><td>Braço</td><td>Coxa</td></tr></thead><tbody>
-          {meds.map(([d, m]) => <tr key={d}><td>{f(d)}</td>{["cintura", "abdomen", "quadril", "braco", "coxa"].map((k) => <td key={k} className="q">{m[k] ? String(m[k]).replace(".", ",") : "—"}</td>)}</tr>)}
+        {meds.length ? <table><thead><tr><td>Dia</td><td>Cint.</td><td>Abd.</td><td>Quad.</td><td>Peito</td><td>Ombro</td><td>Braço</td><td>Coxa</td></tr></thead><tbody>
+          {meds.map(([d, m]) => <tr key={d}><td>{f(d)}</td>{["cintura", "abdomen", "quadril", "peito", "ombro", "braco", "coxa"].map((k) => <td key={k} className="q">{m[k] ? String(m[k]).replace(".", ",") : "—"}</td>)}</tr>)}
         </tbody></table> : <div className="tag">Sem medidas no período.</div>}</div>
 
       <div className="card"><h2>Check-ins (1 a 5)</h2>
