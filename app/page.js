@@ -739,6 +739,8 @@ Feedback: ${feedback || "—"}`;
 
   return (
     <>
+      <WeighReport weights={weights} week={week} day={day} />
+
       <div className="card">
         <h2>Resumo 14 dias</h2>
         <div className="stats">
@@ -1497,5 +1499,76 @@ function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
       </div>
       {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => finish(gym)} />}
     </>
+  );
+}
+
+/* ---------- RELATÓRIO DA PESAGEM ---------- */
+function WeighReport({ weights, week, day }) {
+  if (!weights.length) return null;
+  const f1 = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ","));
+  const sg = (v) => (v > 0 ? "+" : "") + f1(v);
+  const bioOn = (d) => week[d]?.checks?._bio || {};
+  const medOn = (d) => week[d]?.checks?._med || {};
+  const cur = weights.at(-1), prev = weights.length > 1 ? weights.at(-2) : null;
+  const firstBioDay = Object.keys(week).filter((d) => week[d]?.checks?._bio?.gordura).sort();
+  const lastFat = firstBioDay.length ? week[firstBioDay.at(-1)].checks._bio.gordura : null;
+  const prevFat = firstBioDay.length > 1 ? week[firstBioDay.at(-2)].checks._bio.gordura : null;
+  const firstFat = firstBioDay.length ? week[firstBioDay[0]].checks._bio.gordura : null;
+  const magraDays = Object.keys(week).filter((d) => week[d]?.checks?._bio?.magra).sort();
+  const lastMagra = magraDays.length ? week[magraDays.at(-1)].checks._bio.magra : null;
+  const prevMagra = magraDays.length > 1 ? week[magraDays.at(-2)].checks._bio.magra : null;
+  const waistDays = Object.keys(week).filter((d) => medOn(d).cintura).sort();
+  const lastW = waistDays.length ? medOn(waistDays.at(-1)).cintura : null, prevW = waistDays.length > 1 ? medOn(waistDays.at(-2)).cintura : null;
+
+  // período avaliado: desde a pesagem anterior (ou 7 dias)
+  const from = prev ? addDays(prev.day, 1) : addDays(cur.day, -6);
+  const days = []; for (let d = from; d <= cur.day; d = addDays(d, 1)) days.push(d);
+  const n = Math.max(1, days.length);
+  const adh = Math.round(days.reduce((a, d) => a + dayScore(week[d]), 0) / n);
+  const water = days.reduce((a, d) => a + (week[d]?.water_ml || 0), 0) / n;
+  const trains = days.filter((d) => week[d]?.workout_at).length;
+  const supTot = days.length * MEALS.reduce((a, m) => a + m.items.filter((x) => x.sup).length, 0);
+  const supOk = days.reduce((a, d) => a + MEALS.reduce((b, m) => b + m.items.filter((x, i) => x.sup && week[d]?.checks?.[`${m.id}-${i}`]).length, 0), 0);
+  const free = days.filter((d) => week[d]?.checks?._free).length;
+  const missed = days.reduce((a, d) => a + Object.keys(week[d]?.checks?._merge || {}).length, 0);
+  const caf = Math.max(0, ...days.map((d) => (week[d]?.checks?._caf || []).reduce((x, y) => x + y, 0)));
+  const expTrains = Math.round((5 * n) / 7);
+
+  const dW = prev ? cur.kg - prev.kg : null, dTot = cur.kg - START_WEIGHT;
+  const dFat = lastFat != null && prevFat != null ? lastFat - prevFat : null;
+  const dMag = lastMagra != null && prevMagra != null ? lastMagra - prevMagra : null;
+
+  // leitura
+  const ok = [], fix = [];
+  if (adh >= 85) ok.push(`Dieta em ${adh}%: ótima adesão.`); else fix.push(`Dieta em ${adh}%: a meta é 85%+. ${missed ? `${missed} refeição(ões) repostas/puladas.` : ""} Use as marmitas e o "Comi tudo" para não perder refeição.`);
+  if (water >= 2400) ok.push(`Água média ${f1(water / 1000)} L.`); else fix.push(`Água média ${f1(water / 1000)} L de 2,6 L: use o atalho "Bebi água" e a garrafa sempre por perto.`);
+  if (trains >= expTrains) ok.push(`${trains} treino(s) no período.`); else fix.push(`${trains} de ~${expTrains} treinos: priorize não pular, mesmo que seja treino mais curto.`);
+  if (supOk / Math.max(1, supTot) >= 0.9) ok.push("Suplementos em dia."); else fix.push(`Suplementos: ${supOk}/${supTot} doses. Use o atalho "Tomei os suplementos".`);
+  if (free > Math.ceil(n / 7)) fix.push(`${free} refeições livres no período: o plano permite 1 por semana.`);
+  if (caf > 500) fix.push("Cafeína passou de 500 mg em algum dia.");
+
+  let verdict;
+  if (dW == null) verdict = "Primeira pesagem do relatório. A partir da próxima, o app compara e orienta.";
+  else if (Math.abs(dW) < 0.5) verdict = adh >= 85 ? `Peso estável (${sg(dW)} kg), dentro da oscilação normal de água. ${dFat != null && dFat < 0 ? "Gordura caiu: você está trocando gordura por massa magra." : "Se ficar estável por 2–3 semanas com adesão alta, leve ao personal para ajustar o plano."}` : `Peso estável (${sg(dW)} kg), mas a adesão foi ${adh}%. Antes de mudar o plano, cumpra o que já está nele.`;
+  else if (dW < 0) verdict = `Desceu ${f1(-dW)} kg. ${dFat != null ? (dFat <= 0 ? "Gordura também caiu: é perda de gordura." : "A gordura subiu: pode ser água/medição; compare com a cintura e as fotos.") : "Confira a cintura e as fotos para confirmar que é gordura."} ${adh >= 85 ? "Mantenha o que está fazendo." : "Com a adesão baixa, o resultado tende a não se manter: veja os ajustes abaixo."}`;
+  else verdict = adh >= 85 && dMag != null && dMag > 0 ? `Subiu ${f1(dW)} kg com massa magra ${sg(dMag)} kg: parte é ganho muscular. Acompanhe a cintura.` : adh >= 85 ? `Subiu ${f1(dW)} kg com boa adesão. Pode ser água, sal ou intestino. Se repetir na próxima, leve ao personal.` : `Subiu ${f1(dW)} kg e a adesão foi ${adh}%. O ajuste está na rotina: veja os pontos abaixo.`;
+
+  const Row = ({ l, a, b, d, good }) => <tr><td>{l}</td><td className="q">{a}</td><td className="q">{b}</td><td className={"tag num" + (d == null || d === 0 ? "" : (good ? d < 0 : d > 0) ? " okc" : " warn")}>{d == null ? "" : sg(d)}</td></tr>;
+  return (
+    <div className="card now">
+      <div className="mh"><span className="lbl now-lbl">Relatório da pesagem · {fmtDay(cur.day, { day: "2-digit", month: "2-digit" })}</span><span className="tag">{prev ? `vs ${fmtDay(prev.day, { day: "2-digit", month: "2-digit" })}` : "1ª"}</span></div>
+      <table><thead><tr><td></td><td className="tag">Antes</td><td className="tag">Agora</td><td className="tag">Δ</td></tr></thead><tbody>
+        <Row l="Peso (kg)" a={prev ? f1(prev.kg) : "—"} b={f1(cur.kg)} d={dW} good />
+        {lastFat != null && <Row l="Gordura (%)" a={f1(prevFat)} b={f1(lastFat)} d={dFat} good />}
+        {lastMagra != null && <Row l="Massa magra (kg)" a={f1(prevMagra)} b={f1(lastMagra)} d={dMag} good={false} />}
+        {lastW != null && <Row l="Cintura (cm)" a={f1(prevW)} b={f1(lastW)} d={prevW != null ? lastW - prevW : null} good />}
+      </tbody></table>
+      <div className="tag">Desde o início: <b className={dTot <= 0 ? "okc" : "warn"}>{sg(dTot)} kg</b>{firstFat != null && lastFat != null && firstBioDay.length > 1 ? <> · gordura <b className={lastFat - firstFat <= 0 ? "okc" : "warn"}>{sg(lastFat - firstFat)}%</b></> : null}</div>
+      <div className="verdict">{verdict}</div>
+      <div className="lbl">No período ({n} dia{n > 1 ? "s" : ""})</div>
+      {ok.length > 0 && <ul className="sugg okl">{ok.map((x) => <li key={x}>{x}</li>)}</ul>}
+      {fix.length > 0 && <><div className="lbl warn">O que ajustar</div><ul className="sugg">{fix.map((x) => <li key={x}>{x}</li>)}</ul></>}
+      <div className="tag">Orientação automática a partir dos seus registros. Mudanças no plano (calorias, treino) são com o personal.</div>
+    </div>
   );
 }

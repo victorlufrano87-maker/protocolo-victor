@@ -232,3 +232,6 @@ nav button span{font-size:10.5px}
 .goals b{font-size:20px}
 .gbar{display:block;height:6px;border-radius:9px;background:var(--line);overflow:hidden}
 .gbar i{display:block;height:100%;background:var(--ok)}
+
+.verdict{background:var(--card2);border-radius:10px;padding:10px 12px;font-weight:600;line-height:1.4}
+.sugg.okl li{color:var(--ok)}
