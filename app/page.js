@@ -422,6 +422,15 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       </section>
       </Fold>
 
+      {wd === 6 && (
+        <section className={"card" + (checks._mj ? " complete" : "")}>
+          <div className="row" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button className={"ck" + (checks._mj ? " on" : "")} aria-label="Apliquei o Mounjaro" onClick={() => toggle("_mj", !checks._mj)}>{checks._mj && <Icon n="check" s={16} />}</button>
+            <div className="t" onClick={() => toggle("_mj", !checks._mj)}><b>Mounjaro</b> · aplicação semanal (sábado à noite)</div>
+          </div>
+        </section>
+      )}
+
       {/* Pré-treino */}
       <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
       <section className={"card" + (checks._pre ? " complete" : "")}>

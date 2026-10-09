@@ -149,6 +149,10 @@ export async function GET(req) {
       msgs.push(["compras", "Compras da semana", `Básico: frango 2,8 kg, arroz 1 kg, feijão, aveia, pão integral, requeijão, frutas, folhas.${extra.length ? `\nNa lista: ${extra.slice(0, 6).join(", ")}` : ""}${lowStock.length ? `\nAcabando: ${lowStock.join(", ")}` : ""}\nAba Compras → "Adicionar compra básica da semana".`]);
     }
 
+    // Mounjaro (sábado 21:00 + reforço 22:00 se não marcou)
+    if (wd === 6 && inWin(min, 21 * 60)) msgs.push(["mounjaro", "Mounjaro hoje", "Dia da aplicação. Depois de aplicar, marque no app (Hoje → Mounjaro)."]);
+    if (wd === 6 && inWin(min, 22 * 60) && !checks._mj) msgs.push(["mounjaro-2", "Mounjaro ainda não marcado", "Já aplicou? Marque no app."]);
+
     // meal prep (domingo 10:00)
     if (wd === 0 && inWin(min, 10 * 60)) {
       const top = weekShop(+(times.trainings || 5)).filter(([n]) => /frango|arroz|feij/i.test(n)).map(([n, { q, u }]) => `${n.replace(/ \(.*\)/, "")}: ${fmtQty(q, u)}`);
