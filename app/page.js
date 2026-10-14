@@ -1661,10 +1661,26 @@ function WeightOverview({ uid, day, week }) {
         <div><div className="lbl">Total</div><b className="num">{fat.tot != null ? f(fat.tot) + " pp" : "–"}</b><span className="tag">desde {fmtDay(fat.first, { day: "2-digit", month: "2-digit" })}</span></div>
       </div>}
       {fat && fat.d > 0.3 ? <div className="tag warn">A gordura subiu {f(fat.d)} pp. Calma: bioimpedância oscila com água e sal. {FAT_TIPS[new Date(day + "T12:00:00Z").getUTCDate() % FAT_TIPS.length]}</div>
-        : fat && fat.d < 0 ? <div className="tag">Gordura caindo. Você está no caminho, continue assim.</div> : null}
+        : <div className="tag" style={{ fontSize: 12, opacity: .85 }}>{fat && fat.d < 0 ? "Gordura caindo, continue assim. " : ""}Dica: {DAY_TIPS[Math.floor(new Date(day + "T12:00:00Z").getTime() / 864e5) % DAY_TIPS.length]}</div>}
     </section>
   );
 }
+const DAY_TIPS = [
+  "comece cada refeição pela proteína e pela salada; o carboidrato vem por último.",
+  "suba a carga quando fizer todas as repetições com folga. Músculo novo gasta mais energia parado.",
+  "10 mil passos por dia: desça uma estação antes na Paulista e vá andando.",
+  "não pule o cardio de 20 min no fim do treino. É ali que a gordura vai embora.",
+  "coma devagar: 20 min por refeição. A saciedade demora a chegar.",
+  "beba 500 ml de água antes do almoço e do jantar.",
+  "descanse 60–90 s entre as séries: treino mais denso queima mais.",
+  "nada de beliscar à tarde. Se bater fome, tome whey com água ou coma uma fruta.",
+  "deixe as marmitas prontas no domingo. Quem não planeja acaba no delivery.",
+  "durma pelo menos 6 h. Sono curto aumenta a fome no dia seguinte.",
+  "treine com intensidade: as 2 últimas repetições têm que ser difíceis.",
+  "refrigerante só zero e suco nenhum. Caloria líquida não mata a fome.",
+  "fim de semana conta: mantenha os horários de sábado e domingo.",
+  "suba de escada sempre que der. São minutos de cardio grátis.",
+];
 const FAT_TIPS = [
   "Nesta semana: bata a proteína todo dia (frango, ovos, whey). É ela que protege o músculo.",
   "Feche os 2,6 L de água: corpo desidratado faz a balança marcar mais gordura.",
