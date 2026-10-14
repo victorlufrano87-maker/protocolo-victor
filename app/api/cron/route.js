@@ -28,7 +28,7 @@ export async function GET(req) {
     const swaps = log?.swaps || {};
     const merge = checks._merge || {};
     const times = st?.times || {};
-    const tOf = (m) => mealTime(m, times, day);
+    const tOf = (m) => mealTime(m, times, day, checks);
     const msgs = [];
     const divs = +(times.divs || 5), nextL = LETTERS[(+(times.next || 0)) % divs];
     const weighDay = times.weigh !== undefined && times.weigh !== "" && +times.weigh === wd;

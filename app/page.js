@@ -289,7 +289,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const merge = checks._merge || {};
   const freeId = checks._free;
   const workoutToday = !!log.workout_at;
-  const tOf = (m) => m.workout ? (log.workout_at ? spNowTime(log.workout_at) : m.time) : mealTime(m, T, day);
+  const tOf = (m) => m.workout ? (log.workout_at ? spNowTime(log.workout_at) : m.time) : mealTime(m, T, day, checks);
   const meals = MEALS.filter((m) => !m.workout || workoutToday).sort((a, b) => toMin(tOf(a)) - toMin(tOf(b)));
   const main = meals.filter((m) => !m.workout);
   const done = (m) => mealIsDone(log, m);
@@ -311,7 +311,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const toggle = (k, v) => { buzz(); saveLog({ checks: { [k]: v } }); };
   const markAll = (m) => {
     const c = {};
-    [m, ...extrasFor(m)].forEach((x) => x.items.forEach((_, i) => { c[`${x.id}-${i}`] = true; }));
+    [m, ...extrasFor(m)].forEach((x) => x.items.forEach((it, i) => { if (!it.sup) c[`${x.id}-${i}`] = true; }));
     saveLog({ checks: c });
   };
   const doMerge = (src, target) => { buzz(30); saveLog({ checks: { _merge: { ...merge, [src.id]: target } } }); say(target === "skip" ? `${src.name} pulado` : `${src.name} vai junto com o ${nextOf(src).name}`); };
@@ -380,16 +380,10 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         );
       })()}
 
-      {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
-          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
-          onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
-          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
-        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
-
-      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
+      <WeightOverview uid={uid} day={day} />
 
       {/* Suplementos */}
-      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos" summary={`${sups.length}/${sups.length} tomados`}>
+      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
       <section className="card">
         <div className="mh"><h3>Suplementos de hoje</h3><span className="tag num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</span></div>
         <div className="chips">
@@ -401,6 +395,16 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
       </section>
       </Fold>
+
+      {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
+          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
+          onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
+          onWhey={(m) => { const c = { _whey: { ...(checks._whey || {}), [m.id]: true } }; m.items.forEach((it, i) => { if (!it.sup) c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); say("Registrado: só whey"); }}
+          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
+        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+
+      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
+
       {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => { setGym(null); workoutDone(); }} />}
 
       {/* Água */}
@@ -489,9 +493,9 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         <h3>Dia completo</h3>
         <div className="timeline">
           {meals.map((m) => {
-            const isDone = done(m), n = m.items.filter((_, i) => itemDone(log, m, i)).length;
+            const isDone = done(m), food = m.items.filter((it) => !it.sup).length, n = m.items.filter((it, i) => !it.sup && itemDone(log, m, i)).length;
             const mg = merge[m.id], isOpen = open === m.id, late = !isDone && !mg && toMin(tOf(m)) + 30 < now;
-            const status = freeId === m.id ? "livre" : isDone ? "feito" : mg === "skip" ? "pulada" : mg ? `→ ${MEALS.find((x) => x.id === mg)?.name.toLowerCase()}` : missed(m) ? "perdida" : late ? "atrasada" : `${n}/${m.items.length}`;
+            const status = freeId === m.id ? "livre" : isDone ? "feito" : mg === "skip" ? "pulada" : mg ? `→ ${MEALS.find((x) => x.id === mg)?.name.toLowerCase()}` : checks._whey?.[m.id] ? "só whey" : missed(m) ? "perdida" : late ? "atrasada" : `${n}/${food}`;
             return (
               <div key={m.id} className={"tl" + (isDone ? " done" : "") + (focus?.id === m.id ? " focus" : "")}>
                 <button className="tl-head" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen}>
@@ -506,6 +510,18 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
                     {!isDone && <button className="ok" onClick={() => markAll(m)}>Marcar tudo</button>}
                     {mg && <button className="link" onClick={() => undoMerge(m)}>Desfazer reposição/pulo</button>}
                     {!m.workout && !isDone && !freeId && !freeUsedOn && <button className="link" onClick={() => useFree(m)}>Usar refeição livre aqui</button>}
+                    {!m.workout && <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                      <span className="tag">Inverter com:</span>
+                      <select value={checks._swapT?.[m.id] || ""} onChange={(e) => {
+                        const st = { ...(checks._swapT || {}) }, old = st[m.id], o = e.target.value;
+                        if (old) { delete st[old]; delete st[m.id]; }
+                        if (o) { if (st[o]) delete st[st[o]]; st[m.id] = o; st[o] = m.id; }
+                        buzz(); saveLog({ checks: { _swapT: st } }); say(o ? `${m.name} trocado de horário com ${MEALS.find((x) => x.id === o).name}` : "Ordem original");
+                      }}>
+                        <option value="">ordem original</option>
+                        {MEALS.filter((x) => !x.workout && x.id !== m.id).map((x) => <option key={x.id} value={x.id}>{x.name} ({mealTime(x, T, day)})</option>)}
+                      </select>
+                    </div>}
                   </>}
                 </div>}
               </div>
@@ -531,13 +547,13 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
 }
 function spNowTime(iso) { const m = spNow(new Date(iso)).min; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }
 
-function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree, onSnooze, onOut }) {
+function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, extras, target, freeBlocked, onFree, onSnooze, onOut, onWhey }) {
   const [out, setOut] = useState(false);
   const diff = toMin(time) - now;
   const status = m.workout ? "Agora · pós-treino" : diff > 0 ? `Próxima · em ${fmtDur(diff)}` : diff > -30 ? "Agora" : `Atrasada · ${fmtDur(diff)}`;
   const all = [m, ...extras];
-  const total = all.reduce((a, x) => a + x.items.length, 0);
-  const n = all.reduce((a, x) => a + x.items.filter((_, i) => checks[`${x.id}-${i}`]).length, 0);
+  const total = all.reduce((a, x) => a + x.items.filter((it) => !it.sup).length, 0);
+  const n = all.reduce((a, x) => a + x.items.filter((it, i) => !it.sup && checks[`${x.id}-${i}`]).length, 0);
   return (
     <section className={"card now" + (diff <= -30 && !m.workout ? " late" : "")}>
       <div className="mh"><span className="lbl now-lbl">{status}</span><span className="time">{time}</span></div>
@@ -550,7 +566,9 @@ function NowCard({ m, time, now, checks, swaps, toggle, markAll, setSwapFor, ext
       <div className="row" style={{ justifyContent: "space-between" }}>
         {EAT_OUT[m.id] && <button className="link" onClick={() => setOut(true)}>Vou comer fora</button>}
         {!m.workout && !checks._free && !freeBlocked && <button className="link" onClick={onFree}>Usar refeição livre aqui</button>}
+        {!m.workout && <button className="link" onClick={() => onWhey(m)}>Sem tempo: só whey</button>}
       </div>
+      {!m.workout && <div className="tag">Só whey = 1 dose (30 g) com água ou leite; se der, + 1 fruta. Use só em emergência.</div>}
       {out && <div className="sheet-bg" onClick={() => setOut(false)}><div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="grab" />
         <div className="mh"><h2>{m.name} fora de casa</h2><button className="sm" onClick={() => setOut(false)}>Fechar</button></div>
@@ -581,13 +599,13 @@ function ItemRow({ m, it, i, checks, swaps, toggle, setSwapFor, note }) {
 function Items({ m, checks, swaps, toggle, setSwapFor, extras = [], target }) {
   return (
     <>
-      {m.items.map((it, i) => <ItemRow key={i} {...{ m, it, i, checks, swaps, toggle, setSwapFor }} />)}
+      {m.items.map((it, i) => !it.sup && <ItemRow key={i} {...{ m, it, i, checks, swaps, toggle, setSwapFor }} />)}
       {extras.map((src) => {
         const sugg = replaceSuggestion(src, target);
         return (
           <div key={src.id} className="extra">
             <div className="lbl warn">Repor do {src.name.toLowerCase()}</div>
-            {src.items.map((it, i) => <ItemRow key={i} {...{ m: src, it, i, checks, swaps, toggle, setSwapFor }} note={sugg[i]?.text?.includes(" some ") ? sugg[i].text : undefined} />)}
+            {src.items.map((it, i) => !it.sup && <ItemRow key={i} {...{ m: src, it, i, checks, swaps, toggle, setSwapFor }} note={sugg[i]?.text?.includes(" some ") ? sugg[i].text : undefined} />)}
           </div>
         );
       })}
@@ -1609,5 +1627,30 @@ function GoalCard({ weights, week, day }) {
       {rows.length > 0 && <div className="verdict">{onTrack ? "No ritmo da meta. Mantenha a constância." : "Abaixo do ritmo nesta semana: veja o Relatório da pesagem para saber o que ajustar."}</div>}
       <div className="tag">Ritmo saudável: ~0,5 kg e ~0,5 cm de cintura por semana, preservando músculo. Mais rápido que isso costuma custar massa magra. Ajustes de calorias e treino são com o personal.</div>
     </div>
+  );
+}
+
+function WeightOverview({ uid, day }) {
+  const [w, setW] = useState(null);
+  useEffect(() => { supabase.from("weights").select("day,kg").eq("user_id", uid).order("day").then(({ data }) => setW(data || [])); }, [uid, day]);
+  if (!w || w.length < 1) return null;
+  const byDay = {}; w.forEach((x) => { byDay[x.day] = +x.kg; });
+  const pts = Object.entries(byDay).sort(([a], [b]) => (a < b ? -1 : 1));
+  const avg = (from, to) => { const v = pts.filter(([d]) => d > from && d <= to).map(([, k]) => k); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const a7 = avg(addDays(day, -7), day), p7 = avg(addDays(day, -14), addDays(day, -7));
+  const last = pts[pts.length - 1], first = pts[0];
+  const tot = last[1] - first[1];
+  const wk = a7 != null && p7 != null ? a7 - p7 : null;
+  const f = (x, d = 1) => (x > 0 ? "+" : "") + x.toFixed(d).replace(".", ",");
+  const st = wk == null ? ["", "Pese mais vezes para ver a tendência"] : wk <= -0.2 ? ["ok", "Perdendo peso no ritmo"] : wk < 0.2 ? ["warn", "Estável nesta semana"] : ["bad", "Subindo: revise a dieta"];
+  return (
+    <section className="card">
+      <div className="mh"><h3>Peso</h3><span className={"tag " + st[0]}>{st[1]}</span></div>
+      <div className="pre-grid">
+        <div><div className="lbl">Atual</div><b className="num">{last[1].toFixed(1).replace(".", ",")} kg</b><span className="tag">{fmtDay(last[0], { day: "2-digit", month: "2-digit" })}</span></div>
+        <div><div className="lbl">Média 7 dias</div><b className="num">{a7 != null ? a7.toFixed(1).replace(".", ",") : "–"}</b><span className="tag">{wk != null ? `${f(wk)} kg vs semana ant.` : "sem semana anterior"}</span></div>
+        <div><div className="lbl">Total</div><b className="num">{f(tot)} kg</b><span className="tag">desde {fmtDay(first[0], { day: "2-digit", month: "2-digit" })}</span></div>
+      </div>
+    </section>
   );
 }
