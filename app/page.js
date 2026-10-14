@@ -380,7 +380,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         );
       })()}
 
-      <WeightOverview uid={uid} day={day} />
+      <WeightOverview uid={uid} day={day} week={week} />
 
       {/* Suplementos */}
       <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
@@ -1630,10 +1630,11 @@ function GoalCard({ weights, week, day }) {
   );
 }
 
-function WeightOverview({ uid, day }) {
+function WeightOverview({ uid, day, week }) {
   const [w, setW] = useState(null);
   useEffect(() => { supabase.from("weights").select("day,kg").eq("user_id", uid).order("day").then(({ data }) => setW(data || [])); }, [uid, day]);
   if (!w || w.length < 1) return null;
+  
   const byDay = {}; w.forEach((x) => { byDay[x.day] = +x.kg; });
   const pts = Object.entries(byDay).sort(([a], [b]) => (a < b ? -1 : 1));
   const avg = (from, to) => { const v = pts.filter(([d]) => d > from && d <= to).map(([, k]) => k); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
@@ -1642,15 +1643,33 @@ function WeightOverview({ uid, day }) {
   const tot = last[1] - first[1];
   const wk = a7 != null && p7 != null ? a7 - p7 : null;
   const f = (x, d = 1) => (x > 0 ? "+" : "") + x.toFixed(d).replace(".", ",");
+  const bd = Object.keys(week || {}).filter((d) => week[d]?.checks?._bio?.gordura).sort();
+  const fat = bd.length ? (() => { const g = (d) => +week[d].checks._bio.gordura, cur = g(bd.at(-1)), prev = bd.length > 1 ? g(bd.at(-2)) : null;
+    return { cur, prev, d: prev != null ? cur - prev : 0, day: bd.at(-1), first: bd[0], tot: bd.length > 1 ? cur - g(bd[0]) : null }; })() : null;
   const st = wk == null ? ["", "Pese mais vezes para ver a tendência"] : wk <= -0.2 ? ["ok", "Perdendo peso no ritmo"] : wk < 0.2 ? ["warn", "Estável nesta semana"] : ["bad", "Subindo: revise a dieta"];
   return (
     <section className="card">
-      <div className="mh"><h3>Peso</h3><span className={"tag " + st[0]}>{st[1]}</span></div>
+      <div className="mh"><h3>Peso e gordura</h3><span className={"tag " + st[0]}>{st[1]}</span></div>
       <div className="pre-grid">
         <div><div className="lbl">Atual</div><b className="num">{last[1].toFixed(1).replace(".", ",")} kg</b><span className="tag">{fmtDay(last[0], { day: "2-digit", month: "2-digit" })}</span></div>
         <div><div className="lbl">Média 7 dias</div><b className="num">{a7 != null ? a7.toFixed(1).replace(".", ",") : "–"}</b><span className="tag">{wk != null ? `${f(wk)} kg vs semana ant.` : "sem semana anterior"}</span></div>
         <div><div className="lbl">Total</div><b className="num">{f(tot)} kg</b><span className="tag">desde {fmtDay(first[0], { day: "2-digit", month: "2-digit" })}</span></div>
       </div>
+      {fat && <div className="pre-grid" style={{ marginTop: 8 }}>
+        <div><div className="lbl">Gordura</div><b className="num">{fat.cur.toFixed(1).replace(".", ",")}%</b><span className="tag">{fmtDay(fat.day, { day: "2-digit", month: "2-digit" })}</span></div>
+        <div><div className="lbl">Vs anterior</div><b className={"num " + (fat.d > 0 ? "bad" : "")}>{fat.prev != null ? f(fat.d) + " pp" : "–"}</b><span className="tag">pontos de %</span></div>
+        <div><div className="lbl">Total</div><b className="num">{fat.tot != null ? f(fat.tot) + " pp" : "–"}</b><span className="tag">desde {fmtDay(fat.first, { day: "2-digit", month: "2-digit" })}</span></div>
+      </div>}
+      {fat && fat.d > 0.3 ? <div className="tag warn">A gordura subiu {f(fat.d)} pp. Calma: bioimpedância oscila com água e sal. {FAT_TIPS[new Date(day + "T12:00:00Z").getUTCDate() % FAT_TIPS.length]}</div>
+        : fat && fat.d < 0 ? <div className="tag">Gordura caindo. Você está no caminho, continue assim.</div> : null}
     </section>
   );
 }
+const FAT_TIPS = [
+  "Nesta semana: bata a proteína todo dia (frango, ovos, whey). É ela que protege o músculo.",
+  "Feche os 2,6 L de água: corpo desidratado faz a balança marcar mais gordura.",
+  "Não pule treino: são 5 na semana, e o cardio de 20 min no fim conta muito.",
+  "Corte beliscos e líquidos com açúcar. Uma semana limpa já aparece na próxima pesagem.",
+  "Durma o máximo que der: menos de 6 h aumenta a fome e segura gordura.",
+  "Pese sempre igual: em jejum, depois do banheiro e antes de beber água.",
+];
