@@ -766,6 +766,7 @@ Feedback: ${feedback || "—"}`;
 
   return (
     <>
+      <ProjetoVirada week={week} day={day} settings={settings} />
       <GoalCard weights={weights} week={week} day={day} />
       <WeighReport weights={weights} week={week} day={day} />
 
@@ -1460,7 +1461,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
               {tip === i && <div className="gx-tip">{e.img && <img className="gx-img" src={`/ex/${e.img}.jpg`} alt={e.n} loading="lazy" />}{e.tip}</div>}
               <div className="row">
                 <div className="dots">{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
-                <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: ev.target.value } } })} style={{ width: 70 }} aria-label="Carga usada" />
+                <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => { const v = parseFloat(String(ev.target.value).replace(",", ".")); const h = settings.supplies?._loadHist || {}; saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: ev.target.value }, ...(v > 0 ? { _loadHist: { ...h, [e.n]: { ...(h[e.n] || {}), [spNow().day]: v } } } : {}) } }); }} style={{ width: 70 }} aria-label="Carga usada" />
                 {!ok ? <button className="ok" onClick={() => doSet(i, e)}>Série {n + 1} feita</button> : <button className="sm" onClick={() => saveLog({ checks: { _sets: { ...sets, [key(i)]: 0 } } })}>Refazer</button>}
               </div>
             </div>
@@ -1689,3 +1690,51 @@ const FAT_TIPS = [
   "Durma o máximo que der: menos de 6 h aumenta a fome e segura gordura.",
   "Pese sempre igual: em jejum, depois do banheiro e antes de beber água.",
 ];
+
+/* ---------- PROJETO VIRADA (braço, peito, costas) ---------- */
+const VIRADA = { start: "2026-10-19", end: "2026-12-31", goals: [["braco", "Braço", 1.5], ["peito", "Peito", 2], ["ombro", "Ombros/costas", 2], ["cintura", "Cintura", -5]] };
+function ProjetoVirada({ week, day, settings }) {
+  const left = Math.max(0, Math.round((new Date(VIRADA.end + "T12:00:00Z") - new Date(day + "T12:00:00Z")) / 864e5));
+  const total = Math.round((new Date(VIRADA.end + "T12:00:00Z") - new Date(VIRADA.start + "T12:00:00Z")) / 864e5);
+  const md = Object.keys(week).filter((d) => week[d]?.checks?._med).sort();
+  const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace(".", ",");
+  const hist = settings.supplies?._loadHist || {};
+  const groups = [["Peito", "A"], ["Costas", "B"], ["Braço", "E"]].map(([g, id]) => {
+    const w = WORKOUTS.find((x) => x.id === id);
+    const ex = (w?.ex || []).filter((e) => !e.fin && !/Hiperext/.test(e.n)).map((e) => {
+      const cur0 = parseFloat(String(settings.supplies?._loads?.[e.n] || "").replace(",", ".")); const h = Object.entries(hist[e.n] || (cur0 > 0 ? { [VIRADA.start]: cur0 } : {})).sort(([a], [b]) => (a < b ? -1 : 1));
+      if (!h.length) return { n: e.n, none: true };
+      let best = 0, bestDay = h[0][0]; h.forEach(([d, v]) => { if (v > best) { best = v; bestDay = d; } });
+      const stale = h.length > 0 && addDays(bestDay, 14) <= day;
+      return { n: e.n, best, bestDay, first: h[0][1], stale };
+    });
+    return [g, ex];
+  });
+  const stale = groups.flatMap(([, ex]) => ex.filter((e) => e.stale));
+  return (
+    <div className="card">
+      <div className="mh"><h2>Projeto Virada</h2><span className="tag num">{left} dias</span></div>
+      <div className="bar"><i style={{ width: `${Math.min(100, ((total - left) / total) * 100)}%`, background: "var(--ok)" }} /></div>
+      <div className="tag">Foco: braço, peito e costas + cintura menor até 31/12.</div>
+      <h3 style={{ marginTop: 12 }}>Medidas</h3>
+      {md.length ? <table><thead><tr><td></td><td className="tag">Início</td><td className="tag">Agora</td><td className="tag">Meta</td></tr></thead><tbody>
+        {VIRADA.goals.map(([k, l, g]) => {
+          const ds = md.filter((d) => week[d].checks._med[k]); if (!ds.length) return <tr key={k}><td>{l}</td><td colSpan={3} className="tag">medir na segunda</td></tr>;
+          const b = week[ds.find((d) => d >= addDays(VIRADA.start, -7)) || ds[0]].checks._med[k], c = week[ds.at(-1)].checks._med[k], ok = g > 0 ? c > b : c < b;
+          return <tr key={k}><td>{l}</td><td className="q">{f1(b)}</td><td className={"q" + (ds.length > 1 ? (ok ? " okc" : " warn") : "")}>{f1(c)}</td><td className="q">{f1(b + g)}</td></tr>;
+        })}</tbody></table>
+        : <div className="tag">Toda segunda, meça braço contraído, peito, ombros e cintura (Medidas → Registrar hoje).</div>}
+      <h3 style={{ marginTop: 12 }}>Recordes de carga</h3>
+      {groups.map(([g, ex]) => (
+        <div key={g}><div className="lbl">{g}</div>
+          {ex.filter((e) => !e.none).length ? ex.filter((e) => !e.none).map((e) => (
+            <div key={e.n} className="mh" style={{ fontSize: 13 }}><span style={{ flex: 1, minWidth: 0 }}>{e.n}</span>
+              <span className={"num" + (e.stale ? " warn" : "")}>{f1(e.best)} kg{e.best > e.first ? ` (+${f1(e.best - e.first)})` : ""}</span></div>
+          )) : <div className="tag">Anote as cargas no treino para registrar.</div>}
+        </div>
+      ))}
+      {stale.length > 0 && <div className="tag warn">2 semanas sem subir: {stale.slice(0, 3).map((e) => e.n).join(", ")}. Tente +1 repetição ou +1–2 kg no próximo treino.</div>}
+      <div className="tag" style={{ fontSize: 12 }}>Regra: fez todas as repetições com folga, sobe a carga. Proteína todo dia e 5 treinos por semana.</div>
+    </div>
+  );
+}
