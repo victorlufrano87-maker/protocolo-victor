@@ -805,6 +805,7 @@ Feedback: ${feedback || "—"}`;
       <BodyComp week={week} />
 
       <Measures week={week} day={day} onSave={(med) => saveLog({ checks: { _med: med } })} />
+      <Skinfolds week={week} day={day} onSave={(sk) => saveLog({ checks: { _skin: sk } })} />
 
       <div className="card">
         <div className="mh"><h2>Peso em jejum</h2><span className="tag num">inicial 72,4 kg</span></div>
@@ -1757,5 +1758,48 @@ function ViradaMini({ week, day, settings }) {
         {br != null ? <>Braço {br >= 0 ? "+" : ""}{f1(br)} cm</> : "Meça braço, peito, ombros e cintura às segundas"} · detalhes em Progresso.
       </div>
     </section>
+  );
+}
+
+/* ---------- ADIPÔMETRO (Jackson-Pollock 3 dobras, homem) ---------- */
+const SKIN = [["peito", "Peitoral", "diagonal, entre axila e mamilo"], ["abd", "Abdômen", "vertical, 2 cm ao lado do umbigo"], ["coxa", "Coxa", "vertical, frente da coxa, no meio"]];
+const AGE = 27;
+function skinPct(sk) {
+  const S = SKIN.reduce((a, [k]) => a + (+sk[k] || 0), 0); if (!SKIN.every(([k]) => +sk[k] > 0)) return null;
+  const D = 1.10938 - 0.0008267 * S + 0.0000016 * S * S - 0.0002574 * AGE;
+  return Math.round((495 / D - 450) * 10) / 10;
+}
+function Skinfolds({ week, day, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState({});
+  const days = Object.keys(week).filter((d) => week[d]?.checks?._skin?.pct).sort();
+  const last = days.length ? week[days.at(-1)].checks._skin : null, first = days.length ? week[days[0]].checks._skin : null;
+  const bioD = Object.keys(week).filter((d) => week[d]?.checks?._bio?.gordura).sort().at(-1);
+  const f1 = (x) => String(x).replace(".", ",");
+  const num = (x) => parseFloat(String(x || "").replace(",", "."));
+  const prev = skinPct(Object.fromEntries(SKIN.map(([k]) => [k, num(v[k])])));
+  return (
+    <div className="card">
+      <div className="mh"><h2>Adipômetro</h2>{!open && <button className="sm" onClick={() => { setV(week[day]?.checks?._skin || {}); setOpen(true); }}>Registrar hoje</button>}</div>
+      {last ? <>
+        <div className="pre-grid">
+          <div><div className="lbl">Gordura (dobras)</div><b className="num">{f1(last.pct)}%</b><span className="tag">{fmtDay(days.at(-1), { day: "2-digit", month: "2-digit" })}</span></div>
+          <div><div className="lbl">Desde o início</div><b className="num">{days.length > 1 ? `${last.pct - first.pct > 0 ? "+" : ""}${f1((last.pct - first.pct).toFixed(1))} pp` : "–"}</b><span className="tag">pontos de %</span></div>
+          <div><div className="lbl">Balança</div><b className="num">{bioD ? f1(week[bioD].checks._bio.gordura) + "%" : "–"}</b><span className="tag">OKOK</span></div>
+        </div>
+        <div className="tag" style={{ fontSize: 12 }}>Dobras: {SKIN.map(([k, l]) => `${l.toLowerCase()} ${f1(last[k])} mm`).join(" · ")}. Os dois métodos dão números diferentes; compare cada um com ele mesmo.</div>
+      </> : <div className="tag">Meça 3 dobras às segundas, lado direito, antes do treino. O app calcula o % de gordura.</div>}
+      {open && <div className="ci">
+        {SKIN.map(([k, l, h]) => (
+          <div key={k} className="ci-row"><span>{l}<div className="tag">{h}</div></span>
+            <input inputMode="decimal" placeholder="mm" value={v[k] ?? ""} onChange={(e) => setV({ ...v, [k]: e.target.value })} style={{ width: 80 }} /></div>
+        ))}
+        {prev != null && <div className="tag">Resultado: <b>{f1(prev)}% de gordura</b></div>}
+        <div className="row">
+          <button className="pri grow" disabled={prev == null} onClick={() => { const o = Object.fromEntries(SKIN.map(([k]) => [k, num(v[k])])); onSave({ ...o, pct: prev }); setOpen(false); }}>Salvar dobras</button>
+          <button className="sm" onClick={() => setOpen(false)}>Cancelar</button>
+        </div>
+      </div>}
+    </div>
   );
 }
