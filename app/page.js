@@ -381,6 +381,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       })()}
 
       <WeightOverview uid={uid} day={day} week={week} />
+      <ViradaMini week={week} day={day} settings={settings} />
 
       {/* Suplementos */}
       <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
@@ -1736,5 +1737,25 @@ function ProjetoVirada({ week, day, settings }) {
       {stale.length > 0 && <div className="tag warn">2 semanas sem subir: {stale.slice(0, 3).map((e) => e.n).join(", ")}. Tente +1 repetição ou +1–2 kg no próximo treino.</div>}
       <div className="tag" style={{ fontSize: 12 }}>Regra: fez todas as repetições com folga, sobe a carga. Proteína todo dia e 5 treinos por semana.</div>
     </div>
+  );
+}
+
+function ViradaMini({ week, day, settings }) {
+  const left = Math.max(0, Math.round((new Date(VIRADA.end + "T12:00:00Z") - new Date(day + "T12:00:00Z")) / 864e5));
+  const hist = settings.supplies?._loadHist || {};
+  let pr = null;
+  Object.entries(hist).forEach(([n, h]) => { const e = Object.entries(h).sort(([a], [b]) => (a < b ? -1 : 1)); let best = 0;
+    e.forEach(([d, v]) => { if (v > best) { if (best > 0 && (!pr || d >= pr.d)) pr = { n, v, d, up: v - best }; best = v; } }); });
+  const md = Object.keys(week).filter((d) => week[d]?.checks?._med?.braco).sort();
+  const br = md.length > 1 ? week[md.at(-1)].checks._med.braco - week[md[0]].checks._med.braco : null;
+  const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace(".", ",");
+  return (
+    <section className="card">
+      <div className="mh"><h3>Projeto Virada</h3><span className="tag num">{left} dias</span></div>
+      <div className="tag" style={{ fontSize: 12 }}>
+        {pr ? <>Último recorde: <b>{pr.n}</b> {f1(pr.v)} kg (+{f1(pr.up)}) · </> : "Anote as cargas no treino para registrar recordes · "}
+        {br != null ? <>Braço {br >= 0 ? "+" : ""}{f1(br)} cm</> : "Meça braço, peito, ombros e cintura às segundas"} · detalhes em Progresso.
+      </div>
+    </section>
   );
 }
