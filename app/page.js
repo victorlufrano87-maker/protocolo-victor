@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
 import { WORKOUTS } from "@/lib/workouts";
+import { EXMETA } from "@/lib/exmeta";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
@@ -1459,6 +1460,8 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
   if (guided) {
     const e = w.ex[ix], n = sets[key(ix)] || 0, ok = n >= e.s;
     const steps = String(e.tip || "").split(/(?<=\.)\s+/).filter(Boolean);
+    if (!/min|s$/.test(String(e.r))) steps.push("Ritmo: 1 segundo fazendo força, 2 segundos voltando devagar.", "Respire: solte o ar na hora da força e puxe o ar na volta.");
+    const meta = EXMETA[e.img];
     const reps = e.r === "20 min" ? "20 min" : `${e.s} séries × ${e.r}${/s|lado/.test(String(e.r)) ? "" : " reps"}`;
     const hist = Object.entries(settings.supplies?._loadHist?.[e.n] || {}).sort(([a2], [b2]) => (a2 < b2 ? -1 : 1));
     const last = hist.at(-1);
@@ -1472,12 +1475,22 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
             <span className="tag">{ok ? (ix < w.ex.length - 1 ? `Depois: ${w.ex[ix + 1].n}` : "Último exercício feito!") : `Depois: série ${n + 1} de ${e.s}`} · toque para pular</span>
           </button>
         ) : <>
-          {e.fin && <span className="supl">FINAL</span>}
-          <h2 style={{ margin: "6px 0" }}>{e.n}</h2>
-          {e.img && <img className="gx-img big" src={`/ex/${e.img}.jpg`} alt={e.n} />}
-          <div className="seg"><span className="pill">{reps}</span>{e.rest ? <span className="pill">descanso {e.rest}s</span> : null}{e.load ? <span className="pill">{e.load}</span> : null}</div>
-          <div className="lbl">Como fazer</div>
-          <ol className="howto">{steps.map((t) => <li key={t}>{t}</li>)}</ol>
+          <div className="exd-head"><span className="exd-n">{ix + 1}</span><h2>{e.n}</h2>{e.fin && <span className="supl">FINAL</span>}</div>
+          {e.img && <div className="exd-photos">
+            <figure><img src={`/ex/${e.img}.jpg`} alt={`${e.n}: posição 1`} /><figcaption>1 · início</figcaption></figure>
+            <figure><img src={`/ex/${e.img}_1.jpg`} alt={`${e.n}: posição 2`} onError={(ev) => { ev.currentTarget.parentElement.style.display = "none"; }} /><figcaption>2 · fim</figcaption></figure>
+          </div>}
+          <div className="exd-mid">
+            {meta && <div className="exd-body"><BodyFig view={meta.pm.some((m) => ["tríceps", "dorsal", "meio das costas", "trapézio", "lombar", "glúteos", "posterior de coxa", "panturrilha"].includes(m)) ? "b" : "f"} pm={meta.pm} sm={meta.sm} /></div>}
+            <ol className="exd-steps">{steps.map((t, k) => <li key={t}><span>{k + 1}</span>{t}</li>)}</ol>
+          </div>
+          {meta && <div className="tag" style={{ fontSize: 12 }}>Trabalha: <b>{meta.pm.join(", ")}</b>{meta.sm.length ? ` · ajuda: ${meta.sm.join(", ")}` : ""}</div>}
+          <div className="exd-bar">
+            <div><span className="lbl">Séries</span><b>{e.r === "20 min" ? 1 : e.s}</b></div>
+            <div><span className="lbl">{/s|lado|min/.test(String(e.r)) ? "Tempo" : "Reps"}</span><b>{e.r}</b></div>
+            <div><span className="lbl">Descanso</span><b>{e.rest ? `${e.rest}s` : "—"}</b></div>
+          </div>
+          {e.load && <div className="tag" style={{ fontSize: 12 }}>Personal: {e.load}</div>}
           <a className="btn" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(e.n.replace(/\(.*?\)/g, "") + " execução correta")}`} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Ver vídeo de como fazer</a>
           <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
             <span className="tag">Carga:</span>
@@ -1508,7 +1521,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
           const n = sets[key(i)] || 0, ok = n >= e.s;
           return (
             <div key={i} className={"gx" + (ok ? " done" : "") + (i === cur ? " cur" : "")}>
-              <button className="gx-head" onClick={() => setTip(tip === i ? null : i)}>
+              <button className="gx-head" onClick={() => { buzz(); setIx(i); setGuided(true); }}>
                 <span className="gx-n num">{i + 1}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>{e.fin && <span className="supl">FINAL</span>}<b>{e.n}</b><div className="tag">{e.r === "20 min" ? "20 min" : `${e.s} séries × ${e.r}${/s|lado/.test(String(e.r)) ? "" : " reps"}`}{e.rest ? ` · descanso ${e.rest}s` : ""}{e.load ? ` · ${e.load}` : ""}</div></span>
               </button>
@@ -1954,5 +1967,40 @@ function SleepCard({ checks, saveLog }) {
       <div className="seg">{[1, 2, 3, 4, 5].map((q) => <button key={q} className={s.q === q ? "on" : ""} onClick={() => set({ q })}>{["😫", "😕", "😐", "🙂", "😴"][q - 1]} {q}</button>)}</div>
       {s.h && s.h < 7 && <div className="tag" style={{ fontSize: 12 }}>Menos de 7 h: hoje evite cafeína depois das 16h e tente deitar 30 min mais cedo.</div>}
     </section>
+  );
+}
+
+/* ---------- MAPA MUSCULAR ---------- */
+// regiões: [vista, tipo, cx, cy, rx, ry]
+const MUSCLE_MAP = {
+  "peitoral": [["f", 23, 30, 7, 5], ["f", 37, 30, 7, 5]],
+  "ombros": [["f", 14, 26, 4, 5], ["f", 46, 26, 4, 5], ["b", 14, 26, 4, 5], ["b", 46, 26, 4, 5]],
+  "bíceps": [["f", 12, 38, 3, 6], ["f", 48, 38, 3, 6]],
+  "tríceps": [["b", 12, 38, 3, 6], ["b", 48, 38, 3, 6]],
+  "antebraço": [["f", 10, 52, 2.5, 6], ["f", 50, 52, 2.5, 6], ["b", 10, 52, 2.5, 6], ["b", 50, 52, 2.5, 6]],
+  "abdômen": [["f", 30, 46, 6, 9]],
+  "dorsal": [["b", 22, 38, 6, 9], ["b", 38, 38, 6, 9]],
+  "meio das costas": [["b", 30, 34, 5, 6]],
+  "trapézio": [["b", 30, 22, 9, 4]],
+  "lombar": [["b", 30, 52, 5, 4]],
+  "glúteos": [["b", 24, 62, 6, 5], ["b", 36, 62, 6, 5]],
+  "quadríceps": [["f", 24, 74, 5, 10], ["f", 36, 74, 5, 10]],
+  "posterior de coxa": [["b", 24, 76, 5, 9], ["b", 36, 76, 5, 9]],
+  "adutores": [["f", 30, 70, 2.5, 6]],
+  "abdutores": [["f", 19, 64, 2.5, 5], ["f", 41, 64, 2.5, 5]],
+  "panturrilha": [["b", 24, 96, 3.5, 7], ["b", 36, 96, 3.5, 7]],
+};
+function BodyFig({ view, pm = [], sm = [] }) {
+  const reg = (list, op) => list.flatMap((m) => (MUSCLE_MAP[m] || []).filter((r) => r[0] === view).map((r, i) => <ellipse key={m + i + op} cx={r[1]} cy={r[2]} rx={r[3]} ry={r[4]} fill="#ff3b3b" opacity={op} />));
+  return (
+    <svg viewBox="0 0 60 112" className="bodyfig">
+      <g fill="var(--card2)" stroke="var(--mute)" strokeWidth=".6">
+        <circle cx="30" cy="9" r="6" /><rect x="17" y="18" width="26" height="40" rx="8" />
+        <rect x="8" y="22" width="8" height="38" rx="4" /><rect x="44" y="22" width="8" height="38" rx="4" />
+        <rect x="18" y="56" width="11" height="52" rx="5" /><rect x="31" y="56" width="11" height="52" rx="5" />
+      </g>
+      {reg(sm, 0.4)}{reg(pm, 0.9)}
+      <text x="30" y="111" fontSize="5" textAnchor="middle" fill="var(--mute)">{view === "f" ? "frente" : "costas"}</text>
+    </svg>
   );
 }
