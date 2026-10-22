@@ -1453,9 +1453,53 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
   const total = w.ex.reduce((a, e) => a + e.s, 0), done = w.ex.reduce((a, e, i) => a + Math.min(e.s, sets[key(i)] || 0), 0);
   const cur = w.ex.findIndex((e, i) => (sets[key(i)] || 0) < e.s);
   function doSet(i, e) { const n = (sets[key(i)] || 0) + 1; buzz(); saveLog({ checks: { _sets: { ...sets, [key(i)]: Math.min(n, e.s) } } }); if (n < e.s || i < w.ex.length - 1) setRest(e.rest || 45); }
+  const setLoad = (e, val) => { const v = parseFloat(String(val).replace(",", ".")); const h = settings.supplies?._loadHist || {}; saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: val }, ...(v > 0 ? { _loadHist: { ...h, [e.n]: { ...(h[e.n] || {}), [spNow().day]: v } } } : {}) } }); };
+  const [guided, setGuided] = useState(true);
+  const [ix, setIx] = useState(Math.max(0, cur));
+  if (guided) {
+    const e = w.ex[ix], n = sets[key(ix)] || 0, ok = n >= e.s;
+    const steps = String(e.tip || "").split(/(?<=\.)\s+/).filter(Boolean);
+    const reps = e.r === "20 min" ? "20 min" : `${e.s} séries × ${e.r}${/s|lado/.test(String(e.r)) ? "" : " reps"}`;
+    const hist = Object.entries(settings.supplies?._loadHist?.[e.n] || {}).sort(([a2], [b2]) => (a2 < b2 ? -1 : 1));
+    const last = hist.at(-1);
+    return (
+      <div className="gym">
+        <div className="mh"><div><div className="lbl">Treino {w.id} · {w.name} · {ix + 1} de {w.ex.length}</div></div><div className="row" style={{ gap: 6 }}><button className="sm" onClick={() => setGuided(false)}>Ver lista</button><button className="sm" onClick={onClose}>Fechar</button></div></div>
+        <div className="bar"><i style={{ width: `${(done / total) * 100}%` }} /></div>
+        {rest > 0 ? (
+          <button className="rest-big" onClick={() => setRest(0)}>
+            <span className="lbl">Descanse</span><b className="num">{rest}s</b>
+            <span className="tag">{ok ? (ix < w.ex.length - 1 ? `Depois: ${w.ex[ix + 1].n}` : "Último exercício feito!") : `Depois: série ${n + 1} de ${e.s}`} · toque para pular</span>
+          </button>
+        ) : <>
+          {e.fin && <span className="supl">FINAL</span>}
+          <h2 style={{ margin: "6px 0" }}>{e.n}</h2>
+          {e.img && <img className="gx-img big" src={`/ex/${e.img}.jpg`} alt={e.n} />}
+          <div className="seg"><span className="pill">{reps}</span>{e.rest ? <span className="pill">descanso {e.rest}s</span> : null}{e.load ? <span className="pill">{e.load}</span> : null}</div>
+          <div className="lbl">Como fazer</div>
+          <ol className="howto">{steps.map((t) => <li key={t}>{t}</li>)}</ol>
+          <a className="btn" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(e.n.replace(/\(.*?\)/g, "") + " execução correta")}`} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Ver vídeo de como fazer</a>
+          <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+            <span className="tag">Carga:</span>
+            <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => setLoad(e, ev.target.value)} style={{ width: 80 }} aria-label="Carga usada" />
+            <span className="tag" style={{ fontSize: 12 }}>{last ? `última: ${String(last[1]).replace(".", ",")} kg` : "1ª vez: comece leve, sobrando 2 reps"}</span>
+          </div>
+          <div className="dots" style={{ margin: "10px 0" }}>{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
+          {!ok ? <button className="ok big" onClick={() => doSet(ix, e)}>Série {n + 1} de {e.s} feita</button>
+            : ix < w.ex.length - 1 ? <button className="pri big" onClick={() => { buzz(); setIx(ix + 1); }}>Próximo exercício →</button>
+            : <button className="ok big" onClick={onDone}><Icon n="check" /> Terminei o treino</button>}
+          <div className="tag" style={{ fontSize: 12 }}>Subir carga: se fez todas as reps com folga, na próxima vez coloque +1–2 kg.</div>
+        </>}
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 8 }}>
+          <button className="sm" disabled={ix === 0} onClick={() => setIx(ix - 1)}>← Anterior</button>
+          <button className="sm" disabled={ix === w.ex.length - 1} onClick={() => setIx(ix + 1)}>Pular →</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="gym">
-      <div className="mh"><div><div className="lbl">Treino {w.id}</div><h2>{w.name}</h2></div><button className="sm" onClick={onClose}>Fechar</button></div>
+      <div className="mh"><div><div className="lbl">Treino {w.id}</div><h2>{w.name}</h2></div><div className="row" style={{ gap: 6 }}><button className="sm" onClick={() => setGuided(true)}>Passo a passo</button><button className="sm" onClick={onClose}>Fechar</button></div></div>
       <div className="bar"><i style={{ width: `${(done / total) * 100}%` }} /></div>
       <div className="tag">{done}/{total} séries · siga a ordem de cima para baixo · toque no nome para ver como fazer</div>
       {rest > 0 && <button className="rest" onClick={() => setRest(0)}>Descanso <b className="num">{rest}s</b> <span className="tag">toque para pular</span></button>}
@@ -1471,7 +1515,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
               {tip === i && <div className="gx-tip">{e.img && <img className="gx-img" src={`/ex/${e.img}.jpg`} alt={e.n} loading="lazy" />}{e.tip}</div>}
               <div className="row">
                 <div className="dots">{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
-                <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => { const v = parseFloat(String(ev.target.value).replace(",", ".")); const h = settings.supplies?._loadHist || {}; saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: ev.target.value }, ...(v > 0 ? { _loadHist: { ...h, [e.n]: { ...(h[e.n] || {}), [spNow().day]: v } } } : {}) } }); }} style={{ width: 70 }} aria-label="Carga usada" />
+                <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => setLoad(e, ev.target.value)} style={{ width: 70 }} aria-label="Carga usada" />
                 {!ok ? <button className="ok" onClick={() => doSet(i, e)}>Série {n + 1} feita</button> : <button className="sm" onClick={() => saveLog({ checks: { _sets: { ...sets, [key(i)]: 0 } } })}>Refazer</button>}
               </div>
             </div>
