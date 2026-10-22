@@ -239,7 +239,7 @@ function App({ uid }) {
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
           <h1>Protocolo Victor</h1>
-          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · ~1.630 kcal · ~175 g PTN`}</div>
+          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · 2.239 kcal · 199 g PTN`}</div>
         </div>
       </header>
 
@@ -289,7 +289,8 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const merge = checks._merge || {};
   const freeId = checks._free;
   const workoutToday = !!log.workout_at;
-  const tOf = (m) => m.workout ? (log.workout_at ? spNowTime(log.workout_at) : m.time) : mealTime(m, T, day, checks);
+  const ptTime = () => { const t0 = toMin(trainTime(T, day)) + 75, w = log.workout_at ? toMin(spNowTime(log.workout_at)) : null; return fmtHM(w != null && Math.abs(w - t0) <= 180 ? w : t0); };
+  const tOf = (m) => m.workout ? ptTime() : mealTime(m, T, day, checks);
   const meals = MEALS.filter((m) => !m.workout || workoutToday).sort((a, b) => toMin(tOf(a)) - toMin(tOf(b)));
   const main = meals.filter((m) => !m.workout);
   const done = (m) => mealIsDone(log, m);
@@ -301,6 +302,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const focus = pt || main.find((m) => !done(m) && !merge[m.id] && !missed(m)) || main.find((m) => !done(m) && !merge[m.id]);
   const missedList = main.filter(missed);
   const [open, setOpen] = useState(null);
+  const [confirmAll, setConfirmAll] = useState(false);
 
   // semana atual (segunda a domingo) para refeição livre e reposições
   const wd = weekday(day), monday = addDays(day, -((wd + 6) % 7));
@@ -380,6 +382,20 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         );
       })()}
 
+      {(() => {
+        const allDone = main.every((m) => done(m)) && log.water_ml >= WATER_GOAL;
+        if (allDone) return null;
+        return <section className="card">
+          <div className="mh"><h3>Seguiu o PDF hoje?</h3></div>
+          <div className="tag" style={{ fontSize: 12 }}>Marca todas as refeições, suplementos e 2,6 L de água de uma vez. Use só se cumpriu mesmo: é isso que vai para o personal.</div>
+          <button className={confirmAll ? "ok big" : "pri"} onClick={() => {
+            if (!confirmAll) { setConfirmAll(true); setTimeout(() => setConfirmAll(false), 4000); return; }
+            const c = {}; main.forEach((m) => { if (checks._free === m.id) return; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); });
+            buzz(60); saveLog({ checks: c, water_ml: Math.max(log.water_ml || 0, WATER_GOAL) }); setConfirmAll(false); say("Dia marcado como cumprido");
+          }}>{confirmAll ? "Toque de novo para confirmar" : "Segui tudo hoje"}</button>
+        </section>;
+      })()}
+      <SleepCard checks={checks} saveLog={saveLog} />
       <WeightOverview uid={uid} day={day} week={week} />
       <ViradaMini week={week} day={day} settings={settings} />
 
@@ -427,14 +443,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       </section>
       </Fold>
 
-      {wd === 6 && (
-        <section className={"card" + (checks._mj ? " complete" : "")}>
-          <div className="row" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button className={"ck" + (checks._mj ? " on" : "")} aria-label="Apliquei o Mounjaro" onClick={() => toggle("_mj", !checks._mj)}>{checks._mj && <Icon n="check" s={16} />}</button>
-            <div className="t" onClick={() => toggle("_mj", !checks._mj)}><b>Mounjaro</b> · aplicação semanal (sábado à noite)</div>
-          </div>
-        </section>
-      )}
 
       {/* Pré-treino */}
       <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
@@ -767,9 +775,9 @@ Feedback: ${feedback || "—"}`;
 
   return (
     <>
+      <MeuCorpo weights={weights} week={week} day={day} settings={settings} />
       <ProjetoVirada week={week} day={day} settings={settings} />
-      <GoalCard weights={weights} week={week} day={day} />
-      <WeighReport weights={weights} week={week} day={day} />
+      <WeighReport weights={weights} week={week} day={day} settings={settings} />
 
       <div className="card">
         <h2>Resumo 14 dias</h2>
@@ -878,7 +886,7 @@ function Plan({ uid, settings, saveSettings, today, say }) {
         {MEALS.filter((m) => !m.workout).map((m) => (
           <div key={m.id} className="mh"><span>{m.name}</span><input id={"tm-" + m.id} type="time" value={T[m.id] || m.time} onChange={(e) => setT(m.id, e.target.value)} /></div>
         ))}
-        <div className="mh"><span>Treino</span><input id="tm-treino" type="time" value={T.treino || "18:00"} onChange={(e) => setT("treino", e.target.value)} /></div>
+        <div className="mh"><span>Treino</span><input id="tm-treino" type="time" value={T.treino || "21:00"} onChange={(e) => setT("treino", e.target.value)} /></div>
         <div className="mh"><span>Dormir<div className="tag">aviso 30 min antes para desacelerar</div></span><input id="tm-sleep" type="time" value={T.sleep || "23:00"} onChange={(e) => setT("sleep", e.target.value)} /></div>
         <div className="mh"><span>Lembrete de dormir</span><label className="switch"><input id="sleep-on" type="checkbox" checked={T.sleep_on !== false} onChange={(e) => setT("sleep_on", e.target.checked)} /><span /></label></div>
       </div>
@@ -891,7 +899,7 @@ function Plan({ uid, settings, saveSettings, today, say }) {
           {MEALS.filter((m) => !m.workout).map((m) => (
             <div key={m.id} className="mh"><span>{m.name}</span><input id={"we-" + m.id} type="time" value={T["we_" + m.id] || T[m.id] || m.time} onChange={(e) => setT("we_" + m.id, e.target.value)} /></div>
           ))}
-          <div className="mh"><span>Treino</span><input id="we-treino" type="time" value={T.we_treino || T.treino || "18:00"} onChange={(e) => setT("we_treino", e.target.value)} /></div>
+          <div className="mh"><span>Treino</span><input id="we-treino" type="time" value={T.we_treino || T.treino || "21:00"} onChange={(e) => setT("we_treino", e.target.value)} /></div>
         </>}
       </div>
 
@@ -1282,7 +1290,7 @@ function Fold({ done, label, summary, neutral, children }) {
 }
 
 /* ---------- MEDIDAS ---------- */
-const MEAS = [["cintura", "Cintura"], ["abdomen", "Abdômen (umbigo)"], ["quadril", "Quadril"], ["peito", "Peito (linha dos mamilos)"], ["ombro", "Ombros (contorno)"], ["braco", "Braço (contraído)"], ["coxa", "Coxa"]];
+const MEAS = [["cintura", "Cintura (umbigo)"], ["abdomen", "Abdômen (umbigo)"], ["quadril", "Quadril"], ["peito", "Peito (linha dos mamilos)"], ["ombro", "Ombros (contorno)"], ["braco", "Braço (contraído)"], ["coxa", "Coxa"], ["pescoco", "Pescoço"], ["punho", "Punho"]];
 function MeasureForm({ onSave, initial }) {
   const [m, setM] = useState(initial || {});
   const val = (k) => m[k] ?? "";
@@ -1534,7 +1542,7 @@ function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
 }
 
 /* ---------- RELATÓRIO DA PESAGEM ---------- */
-function WeighReport({ weights, week, day }) {
+function WeighReport({ weights, week, day, settings }) {
   if (!weights.length) return null;
   const f1 = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ","));
   const sg = (v) => (v > 0 ? "+" : "") + f1(v);
@@ -1578,8 +1586,10 @@ function WeighReport({ weights, week, day }) {
   if (free > Math.ceil(n / 7)) fix.push(`${free} refeições livres no período: o plano permite 1 por semana.`);
   if (caf > 500) fix.push("Cafeína passou de 500 mg em algum dia.");
 
+  const bv = bodyVerdict(weights, week, settings, day);
   let verdict;
-  if (dW == null) verdict = "Primeira pesagem do relatório. A partir da próxima, o app compara e orienta.";
+  if (bv.k || /Recomposi|gordura|água|músculo/.test(bv.t)) verdict = bv.t;
+  else if (dW == null) verdict = "Primeira pesagem do relatório. A partir da próxima, o app compara e orienta.";
   else if (Math.abs(dW) < 0.5) verdict = adh >= 85 ? `Peso estável (${sg(dW)} kg), dentro da oscilação normal de água. ${dFat != null && dFat < 0 ? "Gordura caiu: você está trocando gordura por massa magra." : "Se ficar estável por 2–3 semanas com adesão alta, leve ao personal para ajustar o plano."}` : `Peso estável (${sg(dW)} kg), mas a adesão foi ${adh}%. Antes de mudar o plano, cumpra o que já está nele.`;
   else if (dW < 0) verdict = `Desceu ${f1(-dW)} kg. ${dFat != null ? (dFat <= 0 ? "Gordura também caiu: é perda de gordura." : "A gordura subiu: pode ser água/medição; compare com a cintura e as fotos.") : "Confira a cintura e as fotos para confirmar que é gordura."} ${adh >= 85 ? "Mantenha o que está fazendo." : "Com a adesão baixa, o resultado tende a não se manter: veja os ajustes abaixo."}`;
   else verdict = adh >= 85 && dMag != null && dMag > 0 ? `Subiu ${f1(dW)} kg com massa magra ${sg(dMag)} kg: parte é ganho muscular. Acompanhe a cintura.` : adh >= 85 ? `Subiu ${f1(dW)} kg com boa adesão. Pode ser água, sal ou intestino. Se repetir na próxima, leve ao personal.` : `Subiu ${f1(dW)} kg e a adesão foi ${adh}%. O ajuste está na rotina: veja os pontos abaixo.`;
@@ -1715,18 +1725,7 @@ function ProjetoVirada({ week, day, settings }) {
   const stale = groups.flatMap(([, ex]) => ex.filter((e) => e.stale));
   return (
     <div className="card">
-      <div className="mh"><h2>Projeto Virada</h2><span className="tag num">{left} dias</span></div>
-      <div className="bar"><i style={{ width: `${Math.min(100, ((total - left) / total) * 100)}%`, background: "var(--ok)" }} /></div>
-      <div className="tag">Foco: braço, peito e costas + cintura menor até 31/12.</div>
-      <h3 style={{ marginTop: 12 }}>Medidas</h3>
-      {md.length ? <table><thead><tr><td></td><td className="tag">Início</td><td className="tag">Agora</td><td className="tag">Meta</td></tr></thead><tbody>
-        {VIRADA.goals.map(([k, l, g]) => {
-          const ds = md.filter((d) => week[d].checks._med[k]); if (!ds.length) return <tr key={k}><td>{l}</td><td colSpan={3} className="tag">medir na segunda</td></tr>;
-          const b = week[ds.find((d) => d >= addDays(VIRADA.start, -7)) || ds[0]].checks._med[k], c = week[ds.at(-1)].checks._med[k], ok = g > 0 ? c > b : c < b;
-          return <tr key={k}><td>{l}</td><td className="q">{f1(b)}</td><td className={"q" + (ds.length > 1 ? (ok ? " okc" : " warn") : "")}>{f1(c)}</td><td className="q">{f1(b + g)}</td></tr>;
-        })}</tbody></table>
-        : <div className="tag">Toda segunda, meça braço contraído, peito, ombros e cintura (Medidas → Registrar hoje).</div>}
-      <h3 style={{ marginTop: 12 }}>Recordes de carga</h3>
+      <div className="mh"><h2>Recordes de carga</h2><span className="tag">peito · costas · braço</span></div>
       {groups.map(([g, ex]) => (
         <div key={g}><div className="lbl">{g}</div>
           {ex.filter((e) => !e.none).length ? ex.filter((e) => !e.none).map((e) => (
@@ -1763,10 +1762,11 @@ function ViradaMini({ week, day, settings }) {
 
 /* ---------- ADIPÔMETRO (Jackson-Pollock 3 dobras, homem) ---------- */
 const SKIN = [["peito", "Peitoral", "diagonal, entre axila e mamilo"], ["abd", "Abdômen", "vertical, 2 cm ao lado do umbigo"], ["coxa", "Coxa", "vertical, frente da coxa, no meio"]];
-const AGE = 27;
+const BIRTH = "1998-11-27";
+const ageOn = (d) => +d.slice(0, 4) - +BIRTH.slice(0, 4) - (d.slice(5) < BIRTH.slice(5) ? 1 : 0);
 function skinPct(sk) {
   const S = SKIN.reduce((a, [k]) => a + (+sk[k] || 0), 0); if (!SKIN.every(([k]) => +sk[k] > 0)) return null;
-  const D = 1.10938 - 0.0008267 * S + 0.0000016 * S * S - 0.0002574 * AGE;
+  const D = 1.10938 - 0.0008267 * S + 0.0000016 * S * S - 0.0002574 * ageOn(spNow().day);
   return Math.round((495 / D - 450) * 10) / 10;
 }
 function Skinfolds({ week, day, onSave }) {
@@ -1801,5 +1801,114 @@ function Skinfolds({ week, day, onSave }) {
         </div>
       </div>}
     </div>
+  );
+}
+
+/* ---------- MEU CORPO (painel interativo) ---------- */
+const BODY = [
+  { k: "gordura", l: "Gordura", u: "%", dir: -1, src: "bio", goal: () => 16.5 },
+  { k: "cintura", l: "Cintura", u: " cm", dir: -1, src: "med", goal: (b) => b - 5 },
+  { k: "magra", l: "Massa magra", u: " kg", dir: 1, src: "bio", goal: (b) => b },
+  { k: "peso", l: "Peso", u: " kg", dir: 0, src: "w", goal: () => 70.8, band: [70, 71.5] },
+  { k: "braco", l: "Braço", u: " cm", dir: 1, src: "med", goal: (b) => b + 1.5 },
+  { k: "peito", l: "Peito", u: " cm", dir: 1, src: "med", goal: (b) => b + 2 },
+  { k: "ombro", l: "Ombros", u: " cm", dir: 1, src: "med", goal: (b) => b + 2 },
+  { k: "dobras", l: "Dobras", u: "%", dir: -1, src: "skin", goal: (b) => b - 4 },
+];
+function bodySeries(m, weights, week) {
+  if (m.src === "w") { const by = {}; weights.forEach((w) => { by[w.day] = +w.kg; }); return Object.entries(by).sort(([a], [b]) => (a < b ? -1 : 1)).map(([d, v]) => ({ d, v })); }
+  const key = m.src === "bio" ? "_bio" : m.src === "med" ? "_med" : "_skin", f = m.src === "skin" ? "pct" : m.k;
+  return Object.keys(week).filter((d) => +week[d]?.checks?.[key]?.[f] > 0).sort().map((d) => ({ d, v: +week[d].checks[key][f] }));
+}
+const dnum = (d) => new Date(d + "T12:00:00Z").getTime() / 864e5;
+// sinais para a leitura do corpo
+function strengthTrend(settings, day) {
+  const hist = settings?.supplies?._loadHist || {}; let up = 0, down = 0;
+  Object.values(hist).forEach((h) => {
+    const e = Object.entries(h).sort(([a], [b]) => (a < b ? -1 : 1)); if (e.length < 2) return;
+    const recent = e.filter(([d]) => d > addDays(day, -14)), old = e.filter(([d]) => d <= addDays(day, -14));
+    const bestOld = Math.max(0, ...old.map(([, v]) => v)), last = e.at(-1)[1], bestRecent = Math.max(0, ...recent.map(([, v]) => v));
+    if (recent.length && bestRecent > bestOld && bestOld > 0) up++; else if (bestOld > 0 && last < bestOld) down++;
+  });
+  return up > down ? 1 : down > up ? -1 : 0;
+}
+function bodyVerdict(weights, week, settings, day) {
+  const W = bodySeries(BODY[3], weights, week), C = bodySeries(BODY[1], weights, week);
+  const avg = (a, b) => { const v = W.filter((p) => p.d > a && p.d <= b).map((p) => p.v); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; };
+  const a1 = avg(addDays(day, -7), day), a0 = avg(addDays(day, -14), addDays(day, -7));
+  const dw = a1 != null && a0 != null ? a1 - a0 : null;
+  const w = dw == null ? null : dw > 0.3 ? 1 : dw < -0.3 ? -1 : 0, fast = dw != null && dw < -0.8;
+  const dc = C.length > 1 ? C.at(-1).v - C.at(-2).v : null, c = dc == null ? null : dc <= -0.5 ? -1 : dc >= 0.5 ? 1 : 0;
+  const s = strengthTrend(settings, day);
+  if (w == null && c == null) return { t: "Ainda sem dados para ler o corpo: pese-se nesta semana e meça a cintura na segunda.", k: "" };
+  if (fast && s < 0) return { t: "Alerta: peso caindo rápido e força caindo. Pode ser perda de músculo: coma todas as refeições e fale com o nutri.", k: "bad" };
+  if (w === 1 && c === 1) return { t: "Peso e cintura subindo. Se repetir por 3 semanas, é ganho de gordura: revise a dieta e os treinos.", k: "warn" };
+  if (w === 0 && c === -1) return { t: "Recomposição: peso igual e cintura caindo. É exatamente o objetivo. Ótimo!", k: "ok" };
+  if (w === -1 && c === -1) return { t: "Perda de gordura: peso e cintura caindo juntos. No ritmo.", k: "ok" };
+  if (w === 1 && c !== 1 && s >= 0) return { t: "Peso subindo com cintura estável: é músculo e água (creatina, carboidrato). Tudo ok.", k: "ok" };
+  if (w === -1 && c === 0) return { t: "Peso caindo com cintura igual: provavelmente água. Espere a próxima medida.", k: "" };
+  if (c == null) return { t: `Peso ${w === 1 ? "subindo" : w === -1 ? "caindo" : "estável"}. Meça a cintura na segunda para o app saber se é gordura, água ou músculo.`, k: "" };
+  return { t: "Sem sinal claro ainda. Siga o plano: a tendência aparece em 2 a 3 semanas.", k: "" };
+}
+function MeuCorpo({ weights, week, day, settings }) {
+  const [mi, setMi] = useState(0);
+  const [sel, setSel] = useState(null);
+  const m = BODY[mi], pts = bodySeries(m, weights, week);
+  const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace(".", ",");
+  const verdict = bodyVerdict(weights, week, settings, day);
+  const left = Math.max(0, Math.round(dnum(VIRADA.end) - dnum(day)));
+  let chart = null, head = null;
+  if (pts.length) {
+    const b = pts[0], cur = pts.at(-1), goal = m.goal(b.v);
+    const x0 = dnum(b.d), x1 = dnum(VIRADA.end), ideal = (d) => b.v + (goal - b.v) * Math.min(1, (dnum(d) - x0) / Math.max(1, x1 - x0));
+    const vs = [...pts.map((p) => p.v), goal, ...(m.band || [])], lo = Math.min(...vs) - 0.5, hi = Math.max(...vs) + 0.5;
+    const Wd = 340, H = 170, P = 34, X = (d) => P + ((dnum(d) - x0) / Math.max(1, x1 - x0)) * (Wd - P - 14), Y = (v) => 12 + ((hi - v) * (H - 36)) / (hi - lo);
+    const diff = cur.v - ideal(cur.d), good = m.dir === 0 ? cur.v <= ideal(cur.d) + 0.5 : m.dir * diff >= -0.3;
+    const done = m.dir === 0 ? 1 - Math.min(1, Math.max(0, (cur.v - goal) / Math.max(0.1, b.v - goal))) : Math.max(0, Math.min(1, (cur.v - b.v) / ((goal - b.v) || 1)));
+    const p = sel != null && pts[sel] ? pts[sel] : cur;
+    head = (
+      <div className="pre-grid">
+        <div><div className="lbl">{p === cur ? "Agora" : fmtDay(p.d, { day: "2-digit", month: "2-digit" })}</div><b className="num">{f1(p.v)}{m.u}</b><span className="tag">{p.v - b.v >= 0 ? "+" : ""}{f1(p.v - b.v)} desde {fmtDay(b.d, { day: "2-digit", month: "2-digit" })}</span></div>
+        <div><div className="lbl">Meta 31/12</div><b className="num">{m.band ? `${f1(m.band[0])}–${f1(m.band[1])}` : f1(goal)}{m.u}</b><span className="tag">{m.k === "magra" ? "manter ou subir" : `${left} dias`}</span></div>
+        <div><div className="lbl">Caminho</div><b className={"num " + (pts.length > 1 ? (good ? "okc" : "warn") : "")}>{pts.length > 1 ? (good ? "no ritmo" : "atrás") : "início"}</b><span className="tag">{Math.round(done * 100)}% da meta</span></div>
+      </div>
+    );
+    chart = (
+      <svg viewBox={`0 0 ${Wd} ${H}`} style={{ width: "100%", touchAction: "manipulation" }}>
+        {m.band && <rect x={P} width={Wd - P - 14} y={Y(m.band[1])} height={Y(m.band[0]) - Y(m.band[1])} fill="var(--ok)" opacity=".12" />}
+        {[lo + 0.5, hi - 0.5].map((v) => <g key={v}><line x1={P} x2={Wd - 14} y1={Y(v)} y2={Y(v)} stroke="var(--line)" /><text x="0" y={Y(v) + 4} fontSize="10" fill="var(--mute)">{f1(v)}</text></g>)}
+        <line x1={X(b.d)} y1={Y(b.v)} x2={X(VIRADA.end)} y2={Y(goal)} stroke="var(--ok)" strokeDasharray="5 5" strokeWidth="2" />
+        <circle cx={X(VIRADA.end)} cy={Y(goal)} r="5" fill="none" stroke="var(--ok)" strokeWidth="2" />
+        <text x={X(VIRADA.end)} y={Y(goal) - 9} fontSize="10" textAnchor="end" fill="var(--ok)">31/12</text>
+        <polyline points={pts.map((q) => `${X(q.d)},${Y(q.v)}`).join(" ")} fill="none" stroke="var(--accent)" strokeWidth="2.5" />
+        {pts.map((q, i) => <g key={q.d} onClick={() => { buzz(); setSel(sel === i ? null : i); }} style={{ cursor: "pointer" }}>
+          <circle cx={X(q.d)} cy={Y(q.v)} r="14" fill="transparent" />
+          <circle cx={X(q.d)} cy={Y(q.v)} r={sel === i || (sel == null && i === pts.length - 1) ? 6 : 3.5} fill="var(--accent)" stroke="var(--bg)" strokeWidth="1.5" />
+        </g>)}
+      </svg>
+    );
+  }
+  return (
+    <div className="card">
+      <div className="mh"><h2>Meu corpo</h2><span className="tag num">{left} dias para a virada</span></div>
+      <div className={"verdict " + verdict.k}>{verdict.t}</div>
+      <div className="seg">{BODY.map((b, i) => <button key={b.k} className={i === mi ? "on" : ""} onClick={() => { buzz(); setMi(i); setSel(null); }}>{b.l}</button>)}</div>
+      {pts.length ? <>{head}{chart}<div className="tag" style={{ fontSize: 12 }}>Linha azul = você. Tracejado verde = caminho até a meta de 31/12. Toque nos pontos para ver cada medida.</div></>
+        : <div className="tag">Sem registros de {m.l.toLowerCase()} ainda. {m.src === "med" ? "Meça com a fita na segunda (Medidas → Registrar hoje)." : m.src === "skin" ? "Use o adipômetro na segunda." : "Pese-se na balança OKOK."}</div>}
+    </div>
+  );
+}
+
+/* ---------- SONO ---------- */
+function SleepCard({ checks, saveLog }) {
+  const s = checks._sleep || {};
+  const set = (o) => { buzz(); saveLog({ checks: { _sleep: { ...s, ...o } } }); };
+  return (
+    <section className="card">
+      <div className="mh"><h3>Sono de ontem</h3><span className="tag">opcional · meta 7 h</span></div>
+      <div className="seg">{[5, 5.5, 6, 6.5, 7, 7.5, 8].map((h) => <button key={h} className={s.h === h ? "on" : ""} onClick={() => set({ h })}>{String(h).replace(".5", "h30").replace(/^(\d)$/, "$1h")}</button>)}</div>
+      <div className="seg">{[1, 2, 3, 4, 5].map((q) => <button key={q} className={s.q === q ? "on" : ""} onClick={() => set({ q })}>{["😫", "😕", "😐", "🙂", "😴"][q - 1]} {q}</button>)}</div>
+      {s.h && s.h < 7 && <div className="tag" style={{ fontSize: 12 }}>Menos de 7 h: hoje evite cafeína depois das 16h e tente deitar 30 min mais cedo.</div>}
+    </section>
   );
 }
