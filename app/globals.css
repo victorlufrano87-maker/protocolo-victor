@@ -258,3 +258,8 @@ nav button span{font-size:10.5px}
 .exd-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0;background:#e53935;border-radius:12px;padding:8px;color:#fff;text-align:center}
 .exd-bar .lbl{color:rgba(255,255,255,.8);display:block;font-size:11px}.exd-bar b{font-size:20px}
 .exd-photos img{filter:brightness(1.2)}
+
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:8px}
+.quick button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;border-radius:12px;text-align:left;min-height:0}
+.quick button b{font-size:16px}
+.more-btn{width:100%;margin:6px 0 12px;background:transparent;border:1px dashed var(--line);color:var(--mute)}

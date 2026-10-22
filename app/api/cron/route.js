@@ -119,13 +119,17 @@ export async function GET(req) {
       }
     }
 
-    // resumo da noite (22:00)
-    if (inWin(min, 22 * 60)) {
+    // resumo único (20:00)
+    if (inWin(min, 20 * 60)) {
       const sc = dayScore(log);
       const missSup = MEALS.filter((m) => !m.workout && checks._free !== m.id).flatMap((m) => m.items.map((it, i) => ({ it, k: `${m.id}-${i}` }))).filter(({ it, k }) => it.sup && !checks[k]).map(({ it }) => it.short);
       const lines = [];
       if (water < WATER_GOAL) lines.push(`Água: faltam ${WATER_GOAL - water} ml`);
       if (missSup.length) lines.push(`Suplementos pendentes: ${missSup.join(", ")}`);
+      const missMeal = MEALS.filter((m) => !m.workout && checks._free !== m.id && !mealIsDone(log || {}, m) && toMin(tOf(m)) < min).map((m) => m.name);
+      if (missMeal.length) lines.push(`Refeições não marcadas: ${missMeal.join(", ")}`);
+      const lowS = SUPPLIES.map((x) => [x, stockLeft(x, st?.supplies?._stock?.[x.id], day)]).filter(([, r]) => r && r.days <= 5).map(([x]) => x.name);
+      if (lowS.length) lines.push(`Acabando: ${lowS.join(", ")}`);
       if (!lines.length) lines.push("Tudo cumprido. Bom descanso!");
       msgs.push(["noite", `Resumo do dia: ${sc}%`, lines.join("\n")]);
     }
@@ -168,7 +172,9 @@ export async function GET(req) {
       if (low.length) msgs.push(["estoque", "Estoque acabando", low.map(([s, r]) => `${s.name}: ~${r.days} dias`).join("\n") + "\nJá está na aba Compras."]);
     }
 
-    for (const [k, title, body] of msgs) {
+    // só o essencial: refeição na hora, pré-treino, treino, pós-treino, resumo das 20h e pesagem/medidas de segunda
+    const KEEP = /^(m\d-on|m\d-snz|pt-on|pre|treino|pt-late|noite|pesar|medir)/;
+    for (const [k, title, body] of msgs.filter(([k]) => KEEP.test(k))) {
       const key = `${day}:${k}`;
       const { error } = await db.from("sent_log").insert({ user_id: uid, key });
       if (error) continue; // já enviado

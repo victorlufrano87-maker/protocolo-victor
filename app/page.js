@@ -304,6 +304,8 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const missedList = main.filter(missed);
   const [open, setOpen] = useState(null);
   const [confirmAll, setConfirmAll] = useState(false);
+  const [more, setMore] = useState(false);
+  const [missOpen, setMissOpen] = useState(false);
 
   // semana atual (segunda a domingo) para refeição livre e reposições
   const wd = weekday(day), monday = addDays(day, -((wd + 6) % 7));
@@ -344,30 +346,24 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   const [gym, setGym] = useState(null);
   async function undoWorkout() { await saveLog({ workout_at: null }); saveSettings({ times: { ...T, next: doneIdx } }); say("Treino desmarcado"); }
 
+  const trainMin = toMin(trainTime(T, day));
+  const eve = !workoutToday && now >= trainMin - 150 && now < 24 * 60;
+  const morning = now < 11 * 60;
+  const supDue = sups.some((x) => !checks[x.k] && toMin(x.time) <= now + 30);
   const weighDay = T.weigh !== undefined && T.weigh !== "" && +T.weigh === wd;
 
   return (
     <>
       <PushBanner />
-      {(() => {
-        const mon2 = addDays(day, -((weekday(day) + 6) % 7));
-        const ds = Array.from({ length: 7 }, (_, i) => addDays(mon2, i)).filter((d) => d <= day);
-        const good = ds.filter((d) => dayScore(week[d]) >= 90).length, tr = ds.filter((d) => week[d]?.workout_at).length;
-        return (
-          <div className="goals">
-            <div><span className="lbl">Dieta 90%+</span><b className="num">{good}/7</b><i className="gbar"><i style={{ width: `${(good / 7) * 100}%` }} /></i></div>
-            <div><span className="lbl">Treinos</span><b className="num">{tr}/5</b><i className="gbar"><i style={{ width: `${Math.min(tr / 5, 1) * 100}%` }} /></i></div>
-          </div>
-        );
-      })()}
-
-      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} hasMed={!!checks._med} saveMed={(m) => saveLog({ checks: { _med: m } })} />}
-
       {missedList.length > 0 && (() => {
         const tgt = main.find((x) => !done(x) && !merge[x.id] && !missed(x));
         return (
           <section className="card missed">
-            <div className="lbl warn">{missedList.length === 1 ? "Refeição perdida" : `${missedList.length} refeições perdidas`}</div>
+            <div className="lbl warn">{missedList.length === 1 ? "Refeição não marcada" : `${missedList.length} refeições não marcadas`}</div>
+            <div className="tag">{missedList.map((m) => `${m.name} (${tOf(m)})`).join(" · ")}</div>
+            <div className="row"><button className="ok grow" onClick={() => { const c = {}; missedList.forEach((m) => m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; })); buzz(40); saveLog({ checks: c }); say("Marcado como comido"); }}>Já comi {missedList.length > 1 ? "todas" : ""}</button>
+              <button className="sm" onClick={() => setMissOpen(!missOpen)}>{missOpen ? "Fechar" : "Não comi: repor"}</button></div>
+            {missOpen && <>
             {missedList.map((m) => (
               <div key={m.id} className="miss-item">
                 <div className="mh"><b>{m.name} · {tOf(m)}</b><button className="link" onClick={() => markAll(m)}>Já comi</button></div>
@@ -379,89 +375,11 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
               Repor {missedList.length > 1 ? "tudo " : ""}no {tgt.name.toLowerCase()} ({tOf(tgt)})</button>
               : <div className="tag">Não há próxima refeição hoje: tome ao menos os suplementos.</div>}
             <button className="link" onClick={() => { const c = { _merge: { ...merge } }; missedList.forEach((m) => { c._merge[m.id] = "skip"; }); saveLog({ checks: c }); }}>Pular sem repor</button>
+            </>}
           </section>
         );
       })()}
-
-      {(() => {
-        const allDone = main.every((m) => done(m)) && log.water_ml >= WATER_GOAL;
-        if (allDone) return null;
-        return <section className="card">
-          <div className="mh"><h3>Seguiu o PDF hoje?</h3></div>
-          <div className="tag" style={{ fontSize: 12 }}>Marca todas as refeições, suplementos e 2,6 L de água de uma vez. Use só se cumpriu mesmo: é isso que vai para o personal.</div>
-          <button className={confirmAll ? "ok big" : "pri"} onClick={() => {
-            if (!confirmAll) { setConfirmAll(true); setTimeout(() => setConfirmAll(false), 4000); return; }
-            const c = {}; main.forEach((m) => { if (checks._free === m.id) return; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); });
-            buzz(60); saveLog({ checks: c, water_ml: Math.max(log.water_ml || 0, WATER_GOAL) }); setConfirmAll(false); say("Dia marcado como cumprido");
-          }}>{confirmAll ? "Toque de novo para confirmar" : "Segui tudo hoje"}</button>
-        </section>;
-      })()}
-      <SleepCard checks={checks} saveLog={saveLog} />
-      <WeightOverview uid={uid} day={day} week={week} />
-      <ViradaMini week={week} day={day} settings={settings} />
-
-      {/* Suplementos */}
-      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
-      <section className="card">
-        <div className="mh"><h3>Suplementos de hoje</h3><span className="tag num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</span></div>
-        <div className="chips">
-          {sups.map(({ it, k, time }) => (
-            <button key={k} className={"chip" + (checks[k] ? " on" : "") + (!checks[k] && toMin(time) < now ? " late" : "")} onClick={() => toggle(k, !checks[k])}>
-              <span className="num">{time}</span><b>{it.short}</b>
-            </button>
-          ))}
-        </div>
-      </section>
-      </Fold>
-
-      {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
-          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
-          onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
-          onWhey={(m) => { const c = { _whey: { ...(checks._whey || {}), [m.id]: true } }; m.items.forEach((it, i) => { if (!it.sup) c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); say("Registrado: só whey"); }}
-          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
-        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
-
-      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
-
-      {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => { setGym(null); workoutDone(); }} />}
-
-      {/* Água */}
-      <Fold done={log.water_ml >= WATER_GOAL} label="Água" summary={`${(log.water_ml / 1000).toFixed(1).replace(".", ",")} L · meta batida`}>
-      <section className="card">
-        <div className="mh"><h3>Água</h3><span className="num">{(log.water_ml / 1000).toFixed(2).replace(".", ",")} / 2,6 L</span></div>
-        <div className="cups">
-          {Array.from({ length: CUPS }, (_, i) => {
-            const full = log.water_ml >= (i + 1) * CUP;
-            return <button key={i} aria-label={`Copo ${i + 1}`} className={"cup" + (full ? " full" : "")}
-              onClick={() => { buzz(); saveLog({ water_ml: full && log.water_ml < (i + 2) * CUP ? i * CUP : (i + 1) * CUP }); }} />;
-          })}
-        </div>
-        <div className="row">
-          <button className="pri grow" onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}>+ 1 copo (250 ml)</button>
-          <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + bottle }); }}>+ garrafa {bottle}</button>
-          <button aria-label="Remover 250 ml" onClick={() => saveLog({ water_ml: Math.max(0, log.water_ml - 250) })}>−</button>
-        </div>
-      </section>
-      </Fold>
-
-
-      {/* Pré-treino */}
-      <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
-      <section className={"card" + (checks._pre ? " complete" : "")}>
-        <div className="mh"><h3>Pré-treino</h3><span className="time">{fmtHM(toMin(trainTime(T, day)) - 30)}</span></div>
-        <div className="item pre" style={{ borderTop: 0 }}>
-          <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
-          <div className="t" onClick={() => toggle("_pre", !checks._pre)}><b>{PREWORKOUT.name}</b></div>
-        </div>
-        <div className="pre-grid">
-          <div><div className="lbl">Quantidade</div><b>2 dosadores</b><span className="tag">10,6 g</span></div>
-          <div><div className="lbl">Quando</div><b>30 min antes</b><span className="tag">treino às {trainTime(T, day)}</span></div>
-          <div><div className="lbl">Misturar em</div><b>260 ml</b><span className="tag">água gelada</span></div>
-        </div>
-        <div className="tag">{PREWORKOUT.rest} Não passar de 10,6 g/dia.</div>
-      </section>
-      </Fold>
-
+      {eve && <>
       {/* Treino */}
       <Fold done={workoutToday} label={`Treino ${LETTERS[doneIdx]}`} summary={`feito · próximo: ${LETTERS[nextIdx]}`}>
       <section className="card">
@@ -484,7 +402,161 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         )}
       </section>
       </Fold>
-
+      {/* Pré-treino */}
+      <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
+      <section className={"card" + (checks._pre ? " complete" : "")}>
+        <div className="mh"><h3>Pré-treino</h3><span className="time">{fmtHM(toMin(trainTime(T, day)) - 30)}</span></div>
+        <div className="item pre" style={{ borderTop: 0 }}>
+          <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
+          <div className="t" onClick={() => toggle("_pre", !checks._pre)}><b>{PREWORKOUT.name}</b></div>
+        </div>
+        <div className="pre-grid">
+          <div><div className="lbl">Quantidade</div><b>2 dosadores</b><span className="tag">10,6 g</span></div>
+          <div><div className="lbl">Quando</div><b>30 min antes</b><span className="tag">treino às {trainTime(T, day)}</span></div>
+          <div><div className="lbl">Misturar em</div><b>260 ml</b><span className="tag">água gelada</span></div>
+        </div>
+        <div className="tag">{PREWORKOUT.rest} Não passar de 10,6 g/dia.</div>
+      </section>
+      </Fold>
+      </>}
+      {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
+          extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
+          onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
+          onWhey={(m) => { const c = { _whey: { ...(checks._whey || {}), [m.id]: true } }; m.items.forEach((it, i) => { if (!it.sup) c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); say("Registrado: só whey"); }}
+          onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
+        : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+      <section className="card quick">
+        <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}><span className="lbl">Água · toque +250</span><b className="num">{(log.water_ml / 1000).toFixed(1).replace(".", ",")}/2,6 L</b></button>
+        <button onClick={() => setMore(true)}><span className="lbl">Suplementos</span><b className="num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</b></button>
+        <button onClick={() => (workoutToday ? null : WORKOUTS[nextIdx] && setGym(WORKOUTS[nextIdx]))}><span className="lbl">Treino {workoutToday ? LETTERS[doneIdx] : LETTERS[nextIdx]}</span><b>{workoutToday ? "feito ✓" : "começar"}</b></button>
+      </section>
+      {supDue && <>
+      {/* Suplementos */}
+      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
+      <section className="card">
+        <div className="mh"><h3>Suplementos de hoje</h3><span className="tag num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</span></div>
+        <div className="chips">
+          {sups.map(({ it, k, time }) => (
+            <button key={k} className={"chip" + (checks[k] ? " on" : "") + (!checks[k] && toMin(time) < now ? " late" : "")} onClick={() => toggle(k, !checks[k])}>
+              <span className="num">{time}</span><b>{it.short}</b>
+            </button>
+          ))}
+        </div>
+      </section>
+      </Fold>
+      </>}
+      {morning && <>
+      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} hasMed={!!checks._med} saveMed={(m) => saveLog({ checks: { _med: m } })} />}
+      <SleepCard checks={checks} saveLog={saveLog} />
+      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
+      </>}
+      {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => { setGym(null); workoutDone(); }} />}
+      <button className="more-btn" onClick={() => setMore(!more)}>{more ? "Mostrar menos ▲" : "Ver mais: semana, peso, água, cafeína, dia completo ▼"}</button>
+      {more && <>
+      {(() => {
+        const mon2 = addDays(day, -((weekday(day) + 6) % 7));
+        const ds = Array.from({ length: 7 }, (_, i) => addDays(mon2, i)).filter((d) => d <= day);
+        const good = ds.filter((d) => dayScore(week[d]) >= 90).length, tr = ds.filter((d) => week[d]?.workout_at).length;
+        return (
+          <div className="goals">
+            <div><span className="lbl">Dieta 90%+</span><b className="num">{good}/7</b><i className="gbar"><i style={{ width: `${(good / 7) * 100}%` }} /></i></div>
+            <div><span className="lbl">Treinos</span><b className="num">{tr}/5</b><i className="gbar"><i style={{ width: `${Math.min(tr / 5, 1) * 100}%` }} /></i></div>
+          </div>
+        );
+      })()}
+      {(() => {
+        const allDone = main.every((m) => done(m)) && log.water_ml >= WATER_GOAL;
+        if (allDone) return null;
+        return <section className="card">
+          <div className="mh"><h3>Seguiu o PDF hoje?</h3></div>
+          <div className="tag" style={{ fontSize: 12 }}>Marca todas as refeições, suplementos e 2,6 L de água de uma vez. Use só se cumpriu mesmo: é isso que vai para o personal.</div>
+          <button className={confirmAll ? "ok big" : "pri"} onClick={() => {
+            if (!confirmAll) { setConfirmAll(true); setTimeout(() => setConfirmAll(false), 4000); return; }
+            const c = {}; main.forEach((m) => { if (checks._free === m.id) return; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); });
+            buzz(60); saveLog({ checks: c, water_ml: Math.max(log.water_ml || 0, WATER_GOAL) }); setConfirmAll(false); say("Dia marcado como cumprido");
+          }}>{confirmAll ? "Toque de novo para confirmar" : "Segui tudo hoje"}</button>
+        </section>;
+      })()}
+      <WeightOverview uid={uid} day={day} week={week} />
+      <ViradaMini week={week} day={day} settings={settings} />
+      {!supDue && <>
+      {/* Suplementos */}
+      <Fold done={sups.length > 0 && sups.every((x) => checks[x.k])} label="Suplementos (separado da comida)" summary={`${sups.length}/${sups.length} tomados`}>
+      <section className="card">
+        <div className="mh"><h3>Suplementos de hoje</h3><span className="tag num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</span></div>
+        <div className="chips">
+          {sups.map(({ it, k, time }) => (
+            <button key={k} className={"chip" + (checks[k] ? " on" : "") + (!checks[k] && toMin(time) < now ? " late" : "")} onClick={() => toggle(k, !checks[k])}>
+              <span className="num">{time}</span><b>{it.short}</b>
+            </button>
+          ))}
+        </div>
+      </section>
+      </Fold>
+      </>}
+      {/* Água */}
+      <Fold done={log.water_ml >= WATER_GOAL} label="Água" summary={`${(log.water_ml / 1000).toFixed(1).replace(".", ",")} L · meta batida`}>
+      <section className="card">
+        <div className="mh"><h3>Água</h3><span className="num">{(log.water_ml / 1000).toFixed(2).replace(".", ",")} / 2,6 L</span></div>
+        <div className="cups">
+          {Array.from({ length: CUPS }, (_, i) => {
+            const full = log.water_ml >= (i + 1) * CUP;
+            return <button key={i} aria-label={`Copo ${i + 1}`} className={"cup" + (full ? " full" : "")}
+              onClick={() => { buzz(); saveLog({ water_ml: full && log.water_ml < (i + 2) * CUP ? i * CUP : (i + 1) * CUP }); }} />;
+          })}
+        </div>
+        <div className="row">
+          <button className="pri grow" onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}>+ 1 copo (250 ml)</button>
+          <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + bottle }); }}>+ garrafa {bottle}</button>
+          <button aria-label="Remover 250 ml" onClick={() => saveLog({ water_ml: Math.max(0, log.water_ml - 250) })}>−</button>
+        </div>
+      </section>
+      </Fold>
+      {!eve && <>
+      {/* Pré-treino */}
+      <Fold done={!!checks._pre} label="Pré-treino" summary="Dila Pump tomado">
+      <section className={"card" + (checks._pre ? " complete" : "")}>
+        <div className="mh"><h3>Pré-treino</h3><span className="time">{fmtHM(toMin(trainTime(T, day)) - 30)}</span></div>
+        <div className="item pre" style={{ borderTop: 0 }}>
+          <button className={"ck" + (checks._pre ? " on" : "")} aria-label="Tomei o pré-treino" onClick={() => toggle("_pre", !checks._pre)}>{checks._pre && <Icon n="check" s={16} />}</button>
+          <div className="t" onClick={() => toggle("_pre", !checks._pre)}><b>{PREWORKOUT.name}</b></div>
+        </div>
+        <div className="pre-grid">
+          <div><div className="lbl">Quantidade</div><b>2 dosadores</b><span className="tag">10,6 g</span></div>
+          <div><div className="lbl">Quando</div><b>30 min antes</b><span className="tag">treino às {trainTime(T, day)}</span></div>
+          <div><div className="lbl">Misturar em</div><b>260 ml</b><span className="tag">água gelada</span></div>
+        </div>
+        <div className="tag">{PREWORKOUT.rest} Não passar de 10,6 g/dia.</div>
+      </section>
+      </Fold>
+      {/* Treino */}
+      <Fold done={workoutToday} label={`Treino ${LETTERS[doneIdx]}`} summary={`feito · próximo: ${LETTERS[nextIdx]}`}>
+      <section className="card">
+        <div className="mh"><h3>Treino</h3><span className="tag num">{trainTime(T, day)}</span></div>
+        {workoutToday ? (
+          <>
+            <div className="big-line"><Icon n="check" /> Treino {LETTERS[doneIdx]} feito · próximo: <b>{LETTERS[nextIdx]}</b></div>
+            <button className="link" onClick={undoWorkout}>Desfazer</button>
+          </>
+        ) : (
+          <>
+            <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b>{WORKOUTS[nextIdx] && <span className="tag">· {WORKOUTS[nextIdx].name}</span>}</div>
+            {WORKOUTS[nextIdx] && <button className="pri big" onClick={() => setGym(WORKOUTS[nextIdx])}><Icon n="dumbbell" s={18} /> Começar treino ({WORKOUTS[nextIdx].ex.length} exercícios)</button>}
+            <div className="row">
+              <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> MFIT</a>
+              <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
+            </div>
+            <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
+          </>
+        )}
+      </section>
+      </Fold>
+      </>}
+      {!morning && <>
+      {weighDay && <WeighCard uid={uid} day={day} say={say} hasCheckin={!!checks._ci} saveCheckin={(ci) => saveLog({ checks: { _ci: ci } })} hasMed={!!checks._med} saveMed={(m) => saveLog({ checks: { _med: m } })} />}
+      <SleepCard checks={checks} saveLog={saveLog} />
+      {!viewing && <DailyPhotos uid={uid} day={day} say={say} />}
+      </>}
       {/* Cafeína */}
       <Fold done={cafTotal < 400} neutral label="Cafeína" summary={`${cafTotal}/${CAFFEINE_MAX} mg · toque para registrar`}>
       <section className="card">
@@ -497,7 +569,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         {caf.length > 0 && <button className="link" onClick={() => saveLog({ checks: { _caf: caf.slice(0, -1) } })}>Desfazer último</button>}
       </section>
       </Fold>
-
       {/* Linha do dia */}
       <section className="card">
         <h3>Dia completo</h3>
@@ -539,7 +610,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           })}
         </div>
       </section>
-
       {/* Semana */}
       <section className="card">
         <div className="mh"><h3>Semana</h3><span className="tag">verde = 100% · contorno laranja = livre</span></div>
@@ -552,6 +622,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         </div>
         <div className="tag">{freeId ? "Refeição livre usada hoje." : freeUsedOn ? `Refeição livre da semana já usada (${fmtDay(freeUsedOn, { weekday: "long" })}).` : "Refeição livre da semana disponível: use pelo card da refeição."}</div>
       </section>
+      </>}
     </>
   );
 }
