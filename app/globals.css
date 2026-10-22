@@ -257,3 +257,4 @@ nav button span{font-size:10.5px}
 .exd-steps li{display:flex;gap:8px}.exd-steps li span{flex:none;width:20px;height:20px;border-radius:50%;background:#e53935;color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;margin-top:1px}
 .exd-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0;background:#e53935;border-radius:12px;padding:8px;color:#fff;text-align:center}
 .exd-bar .lbl{color:rgba(255,255,255,.8);display:block;font-size:11px}.exd-bar b{font-size:20px}
+.exd-photos img{filter:brightness(1.2)}
