@@ -419,6 +419,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       </section>
       </Fold>
       </>}
+      {wd === 0 && <CardioCard checks={checks} saveLog={saveLog} say={say} />}
       {focus ? <NowCard m={focus} time={tOf(focus)} now={now} checks={checks} swaps={log.swaps || {}} toggle={toggle} markAll={markAll} setSwapFor={setSwapFor}
           extras={extrasFor(focus)} target={focus} freeBlocked={freeUsedOn} onFree={() => useFree(focus)}
           onOut={(m) => { const c = { _out: { ...(checks._out || {}), [m.id]: true } }; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); }}
@@ -453,6 +454,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
       {gym && <Gym w={gym} checks={checks} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)} onDone={() => { setGym(null); workoutDone(); }} />}
       <button className="more-btn" onClick={() => setMore(!more)}>{more ? "Mostrar menos ▲" : "Ver mais: semana, peso, água, cafeína, dia completo ▼"}</button>
       {more && <>
+      {wd !== 0 && <CardioCard checks={checks} saveLog={saveLog} say={say} />}
       {(() => {
         const mon2 = addDays(day, -((weekday(day) + 6) % 7));
         const ds = Array.from({ length: 7 }, (_, i) => addDays(mon2, i)).filter((d) => d <= day);
@@ -849,6 +851,7 @@ Feedback: ${feedback || "—"}`;
     <>
       <MeuCorpo weights={weights} week={week} day={day} settings={settings} />
       <ProjetoVirada week={week} day={day} settings={settings} />
+      <CardioHist week={week} day={day} />
       <WeighReport weights={weights} week={week} day={day} settings={settings} />
 
       <div className="card">
@@ -2073,5 +2076,45 @@ function BodyFig({ view, pm = [], sm = [] }) {
       {reg(sm, 0.4)}{reg(pm, 0.9)}
       <text x="30" y="111" fontSize="5" textAnchor="middle" fill="var(--mute)">{view === "f" ? "frente" : "costas"}</text>
     </svg>
+  );
+}
+
+/* ---------- CARDIO ---------- */
+function CardioCard({ checks, saveLog, say }) {
+  const c = checks._cardio;
+  const [open, setOpen] = useState(!c);
+  const [v, setV] = useState({ min: c?.min ?? "", km: c?.km ?? "", kcal: c?.kcal ?? "" });
+  const num = (x) => parseFloat(String(x || "").replace(",", "."));
+  const f = (x, d = 1) => (+x).toFixed(d).replace(".", ",");
+  return (
+    <section className={"card" + (c ? " complete" : "")}>
+      <div className="mh"><h3>Cardio</h3>{c && !open && <button className="sm" onClick={() => setOpen(true)}>Editar</button>}</div>
+      {c && !open ? <div className="pre-grid">
+        <div><div className="lbl">Tempo</div><b className="num">{c.min} min</b></div>
+        <div><div className="lbl">Distância</div><b className="num">{f(c.km, 2)} km</b><span className="tag">{f(c.km / (c.min / 60))} km/h</span></div>
+        <div><div className="lbl">Gasto</div><b className="num">{Math.round(c.kcal || 0)} kcal</b></div>
+      </div> : <>
+        <div className="tag" style={{ fontSize: 12 }}>Copie do relatório da esteira.</div>
+        <div className="ci">
+          {[["min", "Tempo (min)"], ["km", "Distância (km)"], ["kcal", "Calorias (kcal)"]].map(([k, l]) => (
+            <div key={k} className="ci-row"><span>{l}</span><input inputMode="decimal" value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} style={{ width: 90 }} /></div>
+          ))}
+        </div>
+        <button className="ok big" disabled={!(num(v.min) > 0)} onClick={() => { buzz(40); saveLog({ checks: { _cardio: { min: num(v.min), km: num(v.km) || 0, kcal: num(v.kcal) || 0 } } }); setOpen(false); say("Cardio registrado"); }}>Salvar cardio</button>
+      </>}
+    </section>
+  );
+}
+function CardioHist({ week, day }) {
+  const ds = Object.keys(week).filter((d) => week[d]?.checks?._cardio?.min).sort().slice(-6);
+  if (!ds.length) return null;
+  const f = (x, d = 1) => (+x).toFixed(d).replace(".", ",");
+  const tot = ds.filter((d) => d > addDays(day, -28)).reduce((a, d) => a + (week[d].checks._cardio.kcal || 0), 0);
+  return (
+    <div className="card">
+      <div className="mh"><h2>Cardio</h2><span className="tag">{Math.round(tot)} kcal em 4 semanas</span></div>
+      <table><tbody>{ds.map((d) => { const c = week[d].checks._cardio; return <tr key={d}><td>{fmtDay(d, { day: "2-digit", month: "2-digit" })}</td><td className="q">{c.min} min</td><td className="q">{f(c.km, 2)} km</td><td className="q">{c.km ? f(c.km / (c.min / 60)) + " km/h" : ""}</td></tr>; }).reverse()}</tbody></table>
+      <div className="tag" style={{ fontSize: 12 }}>Para evoluir: a cada semana, +2 min de tempo ou +0,2 km/h de velocidade.</div>
+    </div>
   );
 }
