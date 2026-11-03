@@ -71,7 +71,7 @@ export async function GET(req) {
       if (m.workout) {
         if (log?.workout_at && !done) {
           const w = spNow(new Date(log.workout_at));
-          if (w.day === day && min - w.min >= 20) msgs.push([`pt-late`, "Pós-treino pendente", "40 g de whey + 1 col. de mel. Marque no app."]);
+          if (w.day === day && min - w.min >= 20) msgs.push([`pt-late`, "Pós-treino pendente", "40 g de whey com água."]);
         }
         continue;
       }

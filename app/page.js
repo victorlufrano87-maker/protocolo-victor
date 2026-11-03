@@ -243,7 +243,7 @@ function App({ uid }) {
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
           <h1>Protocolo Victor</h1>
-          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · 2.239 kcal · 199 g PTN`}</div>
+          <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · ~1.990 kcal · 199 g PTN`}</div>
         </div>
       </header>
 
@@ -346,7 +346,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
     buzz(60);
     await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: LETTERS[nextIdx] } });
     saveSettings({ times: { ...T, next: (nextIdx + 1) % divs } });
-    try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
+    try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey", icon: "/icon-192.png" }); } catch {}
   }
   const [gym, setGym] = useState(null);
   async function undoWorkout() { await saveLog({ workout_at: null }); saveSettings({ times: { ...T, next: doneIdx } }); say("Treino desmarcado"); }
@@ -1703,7 +1703,7 @@ function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
     const idx = WS.indexOf(w);
     await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: w.id } });
     saveSettings({ times: { ...T, next: (idx + 1) % divs } });
-    try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey + 1 col. de mel", icon: "/icon-192.png" }); } catch {}
+    try { const r = await navigator.serviceWorker.ready; r.showNotification("Pós-treino agora", { body: "40 g de whey", icon: "/icon-192.png" }); } catch {}
   }
   // treinos feitos nesta semana (segunda a domingo)
   const mon = addDays(day, -((weekday(day) + 6) % 7));
@@ -2508,7 +2508,7 @@ function SwapEx({ e, onClose, onToday, onAlways }) {
 }
 
 /* ---------- FOTO DO PRATO ---------- */
-const KCAL_GOAL = 2239, PTN_GOAL = 199;
+const KCAL_GOAL = 1990, PTN_GOAL = 199;
 async function shrink(file, max = 1024) {
   const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = URL.createObjectURL(file); });
   const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");

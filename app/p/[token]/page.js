@@ -36,7 +36,7 @@ export default async function Personal({ params }) {
     <div className="wrap report">
       <div className="lbl">Relatório de acompanhamento · {f(from)} a {f(today)}</div>
       <h1>Protocolo Victor</h1>
-      <div className="tag">Plano: Dr. Victor Rocha · 2.239 kcal (plano original do PDF; desde 22/10, sem ajustes do aluno) · 199 g PTN · água 2,6 L</div>
+      <div className="tag">Plano: Dr. Victor Rocha · ~1.990 kcal (ajuste 03/11: aveia 40 g, arroz do jantar 50 g, sem mel) · 199 g PTN · água 2,6 L</div>
       <div className="card"><div className="stats">
         {[["Adesão dieta", adh + "%"], ["Água/dia", (water / 1000).toFixed(1).replace(".", ",") + " L"], ["Treinos", trains], ["Peso", last ? `${String(last.kg).replace(".", ",")} kg` : "—"]].map(([l, v]) =>
           <div key={l}><div className="lbl">{l}</div><div className="num stat">{v}</div></div>)}
