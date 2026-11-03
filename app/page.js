@@ -148,6 +148,16 @@ function App({ uid }) {
       await supabase.from("day_logs").upsert({ user_id: uid, day: e.day, checks: nx.checks || {}, swaps: nx.swaps || {}, water_ml: nx.water_ml, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
       history.replaceState(null, "", "/"); setToast(`+${q} ml de água`); setTimeout(() => setToast(null), 2500);
     }
+    // Apple Watch (atalho do app Saúde): ?ativa=520&repouso=1700&passos=8400
+    { const q2 = new URLSearchParams(location.search), num = (k) => { const m = String(q2.get(k) || "").replace(/\./g, "").replace(",", ".").match(/\d+(\.\d+)?/); return m ? Math.round(+m[0]) : 0; };
+      const ativa = num("ativa"), repouso = num("repouso"), passos = num("passos");
+      if (ativa || passos) {
+        const dd = q2.get("dia") === "ontem" ? addDays(e.day, -1) : e.day;
+        const cur = map[dd] || EMPTY, nx = { ...cur, checks: { ...(cur.checks || {}), _burn: { ativa, repouso, passos, at: new Date().toISOString() } } };
+        map[dd] = nx; setWeekBoth({ ...map });
+        await supabase.from("day_logs").upsert({ user_id: uid, day: dd, checks: nx.checks, swaps: nx.swaps || {}, water_ml: nx.water_ml || 0, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
+        history.replaceState(null, "", "/"); setToast(`Watch: ${ativa} kcal ativas${passos ? ` · ${passos.toLocaleString("pt-BR")} passos` : ""}`); setTimeout(() => setToast(null), 3500);
+      } }
     // balança (atalho do app Saúde): ?peso=72.4&gordura=18.2&magra=59.1...
     const bio = parseBio(location.search);
     if (bio) {
@@ -437,6 +447,15 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
       <FoodPhoto checks={checks} saveLog={saveLog} say={say} mealName={focus?.name} />
+      {checks._burn && (() => { const b = checks._burn, tot = (b.ativa || 0) + (b.repouso || 0), eat = (checks._foods || []).reduce((a, f) => a + (f.total?.kcal || 0), 0) || KCAL_GOAL;
+        return <section className="card"><div className="mh"><h3>⌚ Apple Watch</h3><span className="tag">atualizado {spNowTime(b.at)}</span></div>
+          <div className="pre-grid">
+            <div><div className="lbl">Ativas</div><b className="num">{b.ativa} kcal</b><span className="tag">meta 500</span></div>
+            <div><div className="lbl">Total gasto</div><b className="num">{tot ? tot.toLocaleString("pt-BR") : "—"}</b><span className="tag">ativas + repouso</span></div>
+            <div><div className="lbl">Passos</div><b className="num">{(b.passos || 0).toLocaleString("pt-BR")}</b><span className="tag">meta 8.000</span></div>
+          </div>
+          {tot > 0 && <div className="tag" style={{ fontSize: 12 }}>Balanço do dia: comendo ~{eat.toLocaleString("pt-BR")} − gastando ~{tot.toLocaleString("pt-BR")} = <b>{(eat - tot > 0 ? "+" : "") + (eat - tot).toLocaleString("pt-BR")} kcal</b> {eat - tot < 0 ? "(déficit ✓)" : "(superávit)"}. O Watch costuma superestimar um pouco.</div>}
+        </section>; })()}
       <section className="card quick">
         <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}><span className="lbl">Água · toque +250</span><b className="num">{(log.water_ml / 1000).toFixed(1).replace(".", ",")}/2,6 L</b></button>
         <button onClick={() => setMore(true)}><span className="lbl">Suplementos</span><b className="num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</b></button>
