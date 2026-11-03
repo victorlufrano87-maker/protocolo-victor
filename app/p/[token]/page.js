@@ -8,7 +8,9 @@ export const metadata = { title: "Acompanhamento · Protocolo Victor", robots: {
 
 export default async function Personal({ params }) {
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const token = String(params.token || "").replace(/[^a-f0-9]/g, "");
+  const { token: rawToken } = await params;
+  const token = String(rawToken || "");
+  if (!/^[a-f0-9]{24}$/.test(token)) return <div className="wrap"><h1>Link inválido</h1></div>;
   if (token.length < 16) return <div className="wrap"><h1>Link inválido</h1></div>;
   const { data: st } = await db.from("settings").select("user_id, update_date").eq("supplies->>_token", token).maybeSingle();
   if (!st) return <div className="wrap"><h1>Link desativado</h1><p className="tag">Peça um novo link ao aluno.</p></div>;

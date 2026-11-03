@@ -1,5 +1,6 @@
 // Coach diário: lê o resumo dos dados do Victor e devolve orientações curtas.
 import { createClient } from "@supabase/supabase-js";
+import { requireOwner, consumeQuota, readJson, RequestError, requestFailure } from "@/lib/ai-guard.mjs";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
@@ -9,13 +10,14 @@ Regras: baseie-se SÓ nos dados recebidos; não invente números; não dê diagn
 Sem markdown pesado: no máximo bullets curtos.`;
 
 export async function POST(req) {
+  try {
+  const uid = await requireOwner(req, { createClient });
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return Response.json({ error: "nokey" }, { status: 501 });
-  const token = (req.headers.get("authorization") || "").replace("Bearer ", "");
-  const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: u } = await sb.auth.getUser(token);
-  if (!u?.user) return Response.json({ error: "auth" }, { status: 401 });
-  const { ctx, question } = await req.json();
+  const { ctx, question } = await readJson(req, 20000);
+  if (!ctx || typeof ctx !== "object" || Array.isArray(ctx) || JSON.stringify(ctx).length > 12000
+    || (question != null && (typeof question !== "string" || question.length > 500))) throw new RequestError(400, "input");
+  await consumeQuota(uid, { createClient });
   const ask = question
     ? `Pergunta do Victor: ${String(question).slice(0, 500)}\nResponda em até 6 linhas.`
     : `Monte o plano de HOJE em exatamente este formato (cada linha curta, máx. 15 palavras):
@@ -27,13 +29,15 @@ export async function POST(req) {
 📈 Leitura do corpo: ... (1 frase sobre a tendência)`;
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(25000),
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({ model: process.env.COACH_MODEL || "claude-sonnet-5-5", max_tokens: 2000, system: SYS,
       messages: [{ role: "user", content: `Dados (JSON):\n${JSON.stringify(ctx).slice(0, 12000)}\n\n${ask}` }] }),
   });
-  if (!r.ok) return Response.json({ error: "api", detail: (await r.text()).slice(0, 300) }, { status: 502 });
+  if (!r.ok) return Response.json({ error: "api" }, { status: 502 });
   const j = await r.json();
   const text = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
-  if (!text) return Response.json({ error: "empty", detail: JSON.stringify(j).slice(0, 300) }, { status: 502 });
+  if (!text) return Response.json({ error: "empty" }, { status: 502 });
   return Response.json({ text, usage: j.usage });
+  } catch (e) { return requestFailure(e); }
 }

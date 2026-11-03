@@ -1,5 +1,7 @@
 # Protocolo Victor v1
 
+**Atualização de segurança e salvamento:** antes de publicar esta versão, siga [ATIVACAO.md](./ATIVACAO.md). O projeto agora usa Next.js 16.4.5, React 19.2.9 e uma migração adicional do banco. Não basta trocar apenas o código da Vercel.
+
 App pessoal de dieta, água e suplementos, com notificações no iPhone. Custo: R$ 0 (Vercel Hobby + Supabase Free).
 
 ## Passo a passo (uns 15 min)

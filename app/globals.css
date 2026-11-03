@@ -32,7 +32,7 @@ button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
 button.ok{background:var(--ok);color:#06231a;border-color:var(--ok)}
 button.sm{padding:6px 10px;font-size:12.5px;flex:none}
 button:disabled{opacity:.5}
-input,select{font:500 15px var(--body);padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--fg)}
+input,select{font:500 16px var(--body);padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--fg)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));z-index:5}
 nav button{flex:1;border:0;background:none;color:var(--mute);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;padding:10px 2px}
@@ -118,7 +118,7 @@ nav button{display:flex;flex-direction:column;align-items:center;gap:3px}
 .ci{display:flex;flex-direction:column;gap:8px}
 .ci-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .ci-opts{display:flex;gap:4px}
-.ci-opts button{width:38px;height:38px;padding:0}
+.ci-opts button{width:44px;height:44px;padding:0}
 .ci-opts button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center}
 .cal-d{aspect-ratio:1;display:grid;place-items:center;border-radius:8px;background:var(--bg);font:12px var(--mono);color:var(--mute)}
@@ -134,7 +134,7 @@ nav button{display:flex;flex-direction:column;align-items:center;gap:3px}
 .switch input:checked+span::after{left:23px}
 
 .daynav{display:flex;align-items:center;gap:6px}
-.daynav button{padding:0 8px;height:24px;border-radius:6px;font-size:16px;line-height:1}
+.daynav button{padding:0 12px;min-width:44px;height:44px;border-radius:6px;font-size:16px;line-height:1}
 .card.editing{flex-direction:row;justify-content:space-between;align-items:center;border-color:var(--accent)}
 .snz{flex:none;font-size:13px}
 .item.pre{border-top:1px solid var(--line)}
@@ -307,3 +307,6 @@ nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
 .hbars{display:flex;align-items:flex-end;gap:4px;height:38px;margin:6px 0}.hbars i{flex:1;background:var(--card2);border-radius:4px}
 .biogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}.biogrid>div{background:var(--card2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px}.biogrid b{font-size:15px}
 .coach-txt{white-space:pre-wrap;line-height:1.55;font-size:15px}
+.sync-status{font-size:12px;color:var(--mute);margin:8px 0 12px}
+details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
+.ci-opts{flex-wrap:wrap}
