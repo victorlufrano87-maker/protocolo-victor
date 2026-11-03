@@ -1,18 +1,27 @@
-const CACHE = "protocolo-v25";
-self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.json", "/icon-192.png"]).catch(() => {}))); });
-self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+const CACHE = "protocolo-v27";
+self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/treino", "/manifest.json", "/training-manifest.json", "/icon-192.png"]).catch(() => {}))); });
+self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith("protocolo-v") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 
 self.addEventListener("fetch", (e) => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
   // arquivos do app (com hash): cache primeiro
-  if (url.pathname.startsWith("/_next/static/") || /\.(png|json|css|woff2?)$/.test(url.pathname)) {
-    e.respondWith(caches.match(req).then((r) => r || fetch(req).then((res) => { const cp = res.clone(); caches.open(CACHE).then((c) => c.put(req, cp)); return res; })));
+  if (url.pathname.startsWith("/_next/static/") || /\.(png|jpe?g|json|css|woff2?)$/.test(url.pathname)) {
+    const response = caches.open(CACHE).then(async (cache) => {
+      const cached = await cache.match(req); if (cached) return cached;
+      const res = await fetch(req);
+      if (res.ok) await cache.put(req, res.clone());
+      return res;
+    });
+    e.respondWith(response);
     return;
   }
   // páginas: rede primeiro, cache se estiver offline
-  if (req.mode === "navigate") {
-    e.respondWith(fetch(req).then((res) => { const cp = res.clone(); caches.open(CACHE).then((c) => c.put("/", cp)); return res; }).catch(() => caches.match("/")));
+  if (req.mode === "navigate" && ["/", "/treino"].includes(url.pathname)) {
+    e.respondWith(fetch(req).then(async (res) => {
+      if (res.ok) { const cache = await caches.open(CACHE); await cache.put(url.pathname, res.clone()); }
+      return res;
+    }).catch(async () => (await caches.match(url.pathname)) || Response.error()));
   }
 });
 

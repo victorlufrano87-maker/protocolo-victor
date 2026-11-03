@@ -1,6 +1,7 @@
 // Lê a foto do prato com o Claude e devolve calorias e macros estimados.
 // Precisa de ANTHROPIC_API_KEY nas variáveis de ambiente da Vercel.
 import { createClient } from "@supabase/supabase-js";
+import { requireOwner, consumeQuota, readJson, foodInput, requestFailure } from "@/lib/ai-guard.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -15,19 +16,16 @@ Responda APENAS com JSON válido, sem texto fora dele, no formato:
 Se não houver comida na foto, devolva itens vazio e obs explicando.`;
 
 export async function POST(req) {
+  try {
+  const uid = await requireOwner(req, { createClient });
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return Response.json({ error: "nokey" }, { status: 501 });
-  // só o dono do app pode usar
-  const token = (req.headers.get("authorization") || "").replace("Bearer ", "");
-  const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: u } = await sb.auth.getUser(token);
-  if (!u?.user) return Response.json({ error: "auth" }, { status: 401 });
-
-  const { image, images, note, mode } = await req.json();
-  const imgs = (images || [image]).filter(Boolean).slice(0, 3);
-  if (!imgs.length || imgs.some((x) => x.length > 4_000_000)) return Response.json({ error: "image" }, { status: 400 });
+  const body = await readJson(req, 12_010_000);
+  const imgs = foodInput(body), { note, mode } = body;
+  await consumeQuota(uid, { createClient });
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
+    signal: AbortSignal.timeout(25000),
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: process.env.FOOD_MODEL || "claude-sonnet-5-5",
@@ -38,7 +36,7 @@ export async function POST(req) {
       ] }],
     }),
   });
-  if (!r.ok) return Response.json({ error: "api", detail: (await r.text()).slice(0, 300) }, { status: 502 });
+  if (!r.ok) return Response.json({ error: "api" }, { status: 502 });
   const j = await r.json();
   const txt = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   try {
@@ -49,4 +47,5 @@ export async function POST(req) {
     out.total = Object.fromEntries(Object.entries(t).map(([k, v]) => [k, Math.round(v)]));
     return Response.json({ ...out, usage: j.usage });
   } catch { return Response.json({ error: "parse" }, { status: 502 }); }
+  } catch (e) { return requestFailure(e); }
 }

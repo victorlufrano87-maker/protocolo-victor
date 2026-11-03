@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { validCronAuthorization, deliverPush } from "@/lib/push-delivery.mjs";
 import { MEALS, WATER_GOAL, SUPPLIES, PREP, WEEK_BASIC, PREWORKOUT, stockLeft, effectiveNow, LETTERS, mealTime, trainTime, mealIsDone, dayScore, weekday, weekShop, fmtQty } from "@/lib/plan";
 import { spNow, toMin, addDays } from "@/lib/supabase";
 
@@ -8,22 +9,25 @@ const inWin = (min, t, len = 15) => min >= t && min < t + len;
 
 // Chamado a cada 5 min pelo pg_cron do Supabase
 export async function GET(req) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`)
+  if (!validCronAuthorization(req.headers.get("authorization"), process.env.CRON_SECRET))
     return new Response("unauthorized", { status: 401 });
 
   webpush.setVapidDetails("mailto:" + (process.env.VAPID_EMAIL || "admin@example.com"),
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  const { data: subs } = await db.from("push_subs").select("*");
+  const { data: subs, error: subsError } = await db.from("push_subs").select("*");
+  if (subsError) return Response.json({ error: "database" }, { status: 503 });
   const users = [...new Set((subs || []).map((s) => s.user_id))];
   let sent = 0;
 
   for (const uid of users) {
-    const { data: st } = await db.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    const { data: st, error: settingsError } = await db.from("settings").select("*").eq("user_id", uid).maybeSingle();
+    if (settingsError) return Response.json({ error: "database" }, { status: 503 });
     const { day, min } = effectiveNow(spNow(), st?.times || {}, addDays);
     const wd = weekday(day);
-    const { data: log } = await db.from("day_logs").select("*").eq("user_id", uid).eq("day", day).maybeSingle();
+    const { data: log, error: logError } = await db.from("day_logs").select("*").eq("user_id", uid).eq("day", day).maybeSingle();
+    if (logError) return Response.json({ error: "database" }, { status: 503 });
     const checks = log?.checks || {};
     const swaps = log?.swaps || {};
     const merge = checks._merge || {};
@@ -176,12 +180,8 @@ export async function GET(req) {
     const KEEP = /^(m\d-on|m\d-snz|pt-on|pre|treino|pt-late|noite|pesar|medir)/;
     for (const [k, title, body] of msgs.filter(([k]) => KEEP.test(k))) {
       const key = `${day}:${k}`;
-      const { error } = await db.from("sent_log").insert({ user_id: uid, key });
-      if (error) continue; // já enviado
-      for (const s of subs.filter((x) => x.user_id === uid)) {
-        try { await webpush.sendNotification(s.sub, JSON.stringify({ title, body, tag: k })); sent++; }
-        catch (e) { if (e.statusCode === 404 || e.statusCode === 410) await db.from("push_subs").delete().eq("endpoint", s.endpoint); }
-      }
+      sent += await deliverPush({ db, uid, key, subscriptions: subs.filter((x) => x.user_id === uid),
+        payload: { title, body, tag: k }, send: (sub, body) => webpush.sendNotification(sub, body, { timeout: 10000 }) });
     }
   }
   await db.from("sent_log").delete().lt("key", addDays(spNow().day, -3));
