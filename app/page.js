@@ -274,7 +274,7 @@ function App({ uid }) {
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
       {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings, week, day }} />}
       {tab === "exer" && <><DayPlanner {...{ settings, saveSettings, log, saveLog, day, say }} /><ExLibrary {...{ settings, saveSettings }} /></>}
-      {tab === "saude" && <HealthTab {...{ week, day, weights: null }} />}
+      {tab === "saude" && <HealthTab {...{ week, day, uid, saveLog, say }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <>
         <div className="seg">{[["plano", "Plano"], ["compras", `Compras${shopCount ? ` (${shopCount})` : ""}`]].map(([k, l]) => <button key={k} className={(planSub || "plano") === k ? "on" : ""} onClick={() => setPlanSub(k)}>{l}</button>)}</div>
@@ -2693,7 +2693,7 @@ const HMET = [
   ["Coração", [["fc", "FC em repouso", "bpm", null, "down", "60–70 é bom; cair com o tempo = coração mais em forma"], ["vfc", "Variabilidade (VFC)", "ms", null, "up", "mais alta = mais recuperado"], ["vo2", "VO₂ máx", "", 42, "up", "condicionamento aeróbico"], ["spo2", "Oxigenação", "%", 95, "up"], ["resp", "Frequência respiratória", "rpm", null, null]]],
   ["Sono", [["sono", "Horas dormidas", "h", 7, "up", "meta: 7 h em 5+ noites"]]],
 ];
-function HealthTab({ week, day }) {
+function HealthTab({ week, day, uid, saveLog, say }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(day, i - 6));
   const val = (d, k) => week[d]?.checks?._burn?.[k];
   const lastDay = [...days].reverse().find((d) => week[d]?.checks?._burn);
@@ -2704,11 +2704,12 @@ function HealthTab({ week, day }) {
     <>
       <div className="card"><div className="mh"><h2>Saúde</h2><span className="tag">{lastDay ? `último envio: ${fmtDay(lastDay, { day: "2-digit", month: "2-digit" })} ${spNowTime(week[lastDay].checks._burn.at)}` : "sem dados ainda"}</span></div>
         <div className="tag">Dados do app Saúde do iPhone (Apple Watch e balança), enviados pelo atalho <b>Watch</b>.</div></div>
-      {bio && <div className="card"><h3>Corpo · {fmtDay(bodyDays.at(-1), { day: "2-digit", month: "2-digit" })}</h3><div className="pre-grid">
-        <div><div className="lbl">Peso</div><b className="num">{f(bio.peso, "km")} kg</b></div>
-        <div><div className="lbl">Gordura</div><b className="num">{f(bio.gordura, "km")}%</b></div>
-        <div><div className="lbl">Massa magra</div><b className="num">{f(bio.magra, "km")} kg</b></div>
-      </div></div>}
+      <div className="card"><div className="mh"><h3>Corpo{bio ? ` · ${fmtDay(bodyDays.at(-1), { day: "2-digit", month: "2-digit" })}` : ""}</h3></div>
+        {bio && <div className="biogrid">{BIO_ALL.filter(([k]) => bio[k] != null).map(([k, l, u]) => {
+          const prevD = bodyDays.slice(0, -1).reverse().find((d) => week[d].checks._bio[k] != null), pv = prevD ? week[prevD].checks._bio[k] : null, dl = pv != null ? bio[k] - pv : null;
+          return <div key={k}><span className="lbl">{l}</span><b className="num">{f(bio[k], "km")}{u}</b>{dl != null && Math.abs(dl) >= 0.05 && <span className="tag">{dl > 0 ? "+" : ""}{String(Math.round(dl * 10) / 10).replace(".", ",")}</span>}</div>; })}</div>}
+        <ScalePrint uid={uid} saveLog={saveLog} say={say} />
+      </div>
       {HMET.map(([g, ms]) => { const list = ms.filter(([k]) => has(k)); return (
         <div key={g} className="card">
           <h3>{g}</h3>
@@ -2730,5 +2731,43 @@ function HealthTab({ week, day }) {
         <div className="tag" style={{ fontSize: 12 }}>Sono: "Localizar Amostras de Saúde" tipo <b>Análise do Sono</b>, valor <b>Dormindo</b>, últimas 24 h → "Obter Detalhes" <b>Duração</b> → "Calcular Estatísticas" <b>Soma</b> → "Converter Medida" para <b>horas</b>.</div>
       </div>
     </>
+  );
+}
+
+const BIO_ALL = [["peso", "Peso", " kg"], ["gordura", "Gordura", "%"], ["gorduraKg", "Gordura", " kg"], ["magra", "Massa magra", " kg"], ["musculo", "Massa muscular", " kg"], ["smm", "Músc. esquelético", " kg"], ["smmPct", "Músc. esquelético", "%"], ["agua", "Água", "%"], ["visceral", "Gordura visceral", ""], ["bmr", "Metabolismo", " kcal"], ["imc", "IMC", ""], ["proteina", "Proteína", "%"], ["ossea", "Massa óssea", " kg"], ["idadeCorporal", "Idade corporal", ""]];
+function ScalePrint({ uid, saveLog, say }) {
+  const [st, setSt] = useState(null), [res, setRes] = useState(null), [err, setErr] = useState(null);
+  async function go(files) {
+    setErr(null); setRes(null); setSt(1);
+    try {
+      const imgs = await Promise.all([...files].slice(0, 3).map((f) => shrink(f, 1400).then((u) => u.split(",")[1])));
+      const { data } = await supabase.auth.getSession();
+      const r = await fetch("/api/food", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ images: imgs, mode: "scale" }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error === "nokey" ? "Falta configurar a chave da IA na Vercel (ANTHROPIC_API_KEY)." : "Não consegui ler o print.");
+      setRes(j); buzz(40);
+    } catch (e) { setErr(e.message); }
+    setSt(null);
+  }
+  const save = async () => {
+    const { data: _d, ...bio } = res;
+    await saveLog({ checks: { _bio: bio } });
+    if (bio.peso) { const d = spNow().day; await supabase.from("weights").delete().eq("user_id", uid).eq("day", d); await supabase.from("weights").insert({ user_id: uid, day: d, kg: bio.peso }); }
+    say("Bioimpedância salva"); setRes(null);
+  };
+  return (
+    <div style={{ marginTop: 10 }}>
+      {!res && <label className="btn" style={{ display: "flex", justifyContent: "center", gap: 8, cursor: "pointer" }}>
+        <Icon n="camera" s={16} /> {st ? "Lendo o print..." : "Ler prints da OKOK (até 3)"}
+        <input type="file" accept="image/*" multiple hidden disabled={!!st} onChange={(e) => e.target.files?.length && go(e.target.files)} />
+      </label>}
+      {!res && <div className="tag" style={{ fontSize: 12 }}>Tire print da tela "Detalhes" da OKOK (role para pegar tudo) e escolha os prints aqui.</div>}
+      {err && <div className="tag warn">{err}</div>}
+      {res && <>
+        <div className="biogrid">{BIO_ALL.filter(([k]) => res[k] != null).map(([k, l, u]) => <div key={k}><span className="lbl">{l}</span><b className="num">{String(res[k]).replace(".", ",")}{u}</b></div>)}</div>
+        <div className="tag" style={{ fontSize: 12 }}>Confira se os números batem com o print.</div>
+        <div className="row"><button className="ok grow" onClick={save}>Salvar no dia de hoje</button><button className="sm" onClick={() => setRes(null)}>Descartar</button></div>
+      </>}
+    </div>
   );
 }

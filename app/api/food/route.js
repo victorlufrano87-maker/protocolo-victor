@@ -5,6 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const SCALE = `Leia este print de app de balança de bioimpedância (pode haver mais de uma imagem/trecho). Extraia os números exatamente como aparecem.
+Responda APENAS JSON: {"data":"AAAA-MM-DD ou null","peso":0,"gordura":0,"gorduraKg":0,"magra":0,"musculo":0,"smm":0,"smmPct":0,"agua":0,"aguaKg":0,"visceral":0,"bmr":0,"imc":0,"proteina":0,"ossea":0,"idadeCorporal":0}
+Use null no que não aparecer. Percentuais como número (21.8), não fração.`;
 const PROMPT = `Você é um nutricionista. Analise a foto do prato e estime cada alimento visível.
 Use porções realistas brasileiras (ex.: 1 colher de servir de arroz ≈ 45 g). Se houver texto do usuário, use-o como dica de quantidade ou alimento.
 Responda APENAS com JSON válido, sem texto fora dele, no formato:
@@ -20,8 +23,9 @@ export async function POST(req) {
   const { data: u } = await sb.auth.getUser(token);
   if (!u?.user) return Response.json({ error: "auth" }, { status: 401 });
 
-  const { image, note } = await req.json();
-  if (!image || image.length > 4_000_000) return Response.json({ error: "image" }, { status: 400 });
+  const { image, images, note, mode } = await req.json();
+  const imgs = (images || [image]).filter(Boolean).slice(0, 3);
+  if (!imgs.length || imgs.some((x) => x.length > 4_000_000)) return Response.json({ error: "image" }, { status: 400 });
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -29,8 +33,8 @@ export async function POST(req) {
       model: process.env.FOOD_MODEL || "claude-sonnet-5-5",
       max_tokens: 800,
       messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-        { type: "text", text: PROMPT + (note ? `\nDica do usuário: ${String(note).slice(0, 200)}` : "") },
+        ...imgs.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
+        { type: "text", text: mode === "scale" ? SCALE : PROMPT + (note ? `\nDica do usuário: ${String(note).slice(0, 200)}` : "") },
       ] }],
     }),
   });
@@ -39,6 +43,7 @@ export async function POST(req) {
   const txt = (j.content || []).map((c) => c.text || "").join("");
   try {
     const out = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+    if (mode === "scale") return Response.json(Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== 0)));
     const t = { kcal: 0, ptn: 0, carb: 0, gord: 0 };
     (out.itens || []).forEach((i) => { for (const k in t) t[k] += +i[k] || 0; });
     out.total = Object.fromEntries(Object.entries(t).map(([k, v]) => [k, Math.round(v)]));
