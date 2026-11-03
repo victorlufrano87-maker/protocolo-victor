@@ -196,3 +196,64 @@ test("session validation rejects unknown exercises, duplicates and invalid effor
     ...patch
   }, plan));
 });
+
+const experienced = { ...healthy, experience: 'regular', break: 'none', place: 'gym', equipment: ['machines', 'cables', 'dumbbells', 'bench'], days: ['mon', 'tue', 'thu', 'fri'], minutes: 60 };
+test('experience and schedule choose an actual split with different upper/lower content', () => {
+  const plan = buildPlan(experienced);
+  assert.equal(plan.division, 'upper_lower');
+  assert.equal(plan.generatorVersion, 2);
+  assert.equal(plan.workouts.filter(w => w.focus === 'upper').length, 2);
+  assert.equal(plan.workouts.filter(w => w.focus === 'lower').length, 2);
+  for (const w of plan.workouts) {
+    assert.match(w.name, /Superiores|Inferiores/);
+    assert.ok(w.exercises.length >= 3);
+    if (w.focus === 'upper') assert.ok(w.exercises.every(x => !['squat','hinge','core'].includes(x.pattern)));
+    if (w.focus === 'lower') assert.ok(w.exercises.every(x => !['push','pull','shoulder','biceps','triceps'].includes(x.pattern)));
+  }
+  assert.equal(buildPlan({ ...experienced, experience: 'new' }).division, 'full_body');
+  assert.equal(buildPlan({ ...experienced, break: 'long' }).division, 'full_body');
+  assert.equal(buildPlan({ ...experienced, minutes: 20 }).division, 'full_body');
+  assert.equal(buildPlan({ ...experienced, equipment: [] }).division, 'full_body');
+});
+test('different goals and priorities change prescriptions, not just their titles', () => {
+  const muscle = buildPlan(experienced), strength = buildPlan({ ...experienced, goal: 'strength' });
+  assert.equal(muscle.workouts[0].exercises[0].reps, '8–12');
+  assert.equal(strength.workouts[0].exercises[0].reps, '6–8');
+  assert.ok(strength.workouts[0].exercises[0].rest > muscle.workouts[0].exercises[0].rest);
+  const upper = buildPlan({ ...experienced, priorities: ['upper'] });
+  assert.ok(upper.workouts[0].exercises[0].sets > muscle.workouts[0].exercises[0].sets);
+  assert.equal(buildPlan({ ...experienced, priorities: ['lower'] }).workouts[0].focus, 'lower');
+  const threeDays = { ...experienced, days: ['mon','wed','fri'] };
+  const balanced = buildPlan(threeDays), focused = buildPlan({ ...threeDays, priorities: ['upper'] });
+  assert.notDeepEqual(balanced.workouts[0].exercises.map(x => x.id), focused.workouts[0].exercises.map(x => x.id));
+  assert.equal(buildPlan({ ...threeDays, priorities: ['core'] }).workouts[0].exercises[0].pattern, 'core');
+  assert.ok(new Set(balanced.workouts.map(w => w.exercises.map(x => x.id).join(','))).size > 1);
+});
+test('all weekly schedules preserve region recovery and time budgets, including Sunday/Monday', () => {
+  for (let mask = 1; mask < 128; mask++) {
+    const days = DAYS.filter((_, i) => mask & (1 << i)).map(([d]) => d);
+    if (days.length > 5) continue;
+    for (const minutes of [20,30,45,60]) {
+      const plan = buildPlan({ ...experienced, days, minutes });
+      for (const w of plan.workouts) {
+        assert.ok(w.minutes <= minutes);
+        if (w.kind !== 'strength') continue;
+        for (const other of plan.workouts) {
+          if (other === w || other.kind !== 'strength' || other.focus !== w.focus) continue;
+          const gap = Math.abs(DAYS.findIndex(([d]) => d === w.day) - DAYS.findIndex(([d]) => d === other.day));
+          assert.ok(![1,6].includes(gap));
+        }
+      }
+    }
+  }
+});
+test('expanded exercises and alternatives respect overhead/floor preferences even with AI ranking', () => {
+  const p = { ...experienced, avoid: ['overhead','floor','barbell'] };
+  const eligible = new Map(eligibleExercises(p).map(x => [x.id,x]));
+  assert.ok(!eligible.has('lat-pulldown'));
+  assert.ok(!eligible.has('db-shoulder'));
+  for (const x of buildPlan(p, {aiRanking:['lat-pulldown','db-shoulder','deadbug']}).workouts.flatMap(w => w.exercises)) {
+    assert.ok(eligible.has(x.id));
+    for (const id of x.alternatives) assert.ok(eligible.has(id));
+  }
+});
