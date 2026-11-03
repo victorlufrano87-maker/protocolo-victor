@@ -306,3 +306,4 @@ nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
 .hmet{padding:8px 0;border-top:1px solid var(--line)}.hmet:first-of-type{border-top:0}
 .hbars{display:flex;align-items:flex-end;gap:4px;height:38px;margin:6px 0}.hbars i{flex:1;background:var(--card2);border-radius:4px}
 .biogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}.biogrid>div{background:var(--card2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px}.biogrid b{font-size:15px}
+.coach-txt{white-space:pre-wrap;line-height:1.55;font-size:15px}

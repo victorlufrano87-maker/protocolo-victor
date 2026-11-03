@@ -385,6 +385,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
   return (
     <>
       <PushBanner />
+      <CoachCard week={week} day={day} settings={settings} log={log} saveLog={saveLog} uid={uid} />
       {missedList.length > 0 && (() => {
         const tgt = main.find((x) => !done(x) && !merge[x.id] && !missed(x));
         return (
@@ -2769,5 +2770,50 @@ function ScalePrint({ uid, saveLog, say }) {
         <div className="row"><button className="ok grow" onClick={save}>Salvar no dia de hoje</button><button className="sm" onClick={() => setRes(null)}>Descartar</button></div>
       </>}
     </div>
+  );
+}
+
+/* ---------- COACH DIÁRIO (IA) ---------- */
+function coachCtx({ week, day, settings, weights }) {
+  const days = Array.from({ length: 14 }, (_, i) => addDays(day, i - 13));
+  const pick = (d) => { const l = week[d]; if (!l) return null; const c = l.checks || {};
+    return { d, dieta: dayScore(l), agua: l.water_ml || 0, treino: l.workout_at ? (c._wk || "sim") : null, kcalFoto: (c._foods || []).reduce((a, f) => a + (f.total?.kcal || 0), 0) || undefined,
+      sono: c._sleep?.h || c._burn?.sono, ativa: c._burn?.ativa, passos: c._burn?.passos, fc: c._burn?.fc, bio: c._bio, med: c._med, dobras: c._skin?.pct, cardio: c._cardio }; };
+  const ws = myWorkouts(settings), T = settings.times || {}, nx = ws[+(T.next || 0) % Math.min(+(T.divs || 5), ws.length)];
+  return {
+    hoje: day, diaSemana: fmtDay(day, { weekday: "long" }), dietaPlano: `${KCAL_GOAL} kcal, ${PTN_GOAL} g proteína`, treinoHora: trainTime(T, day),
+    proximoTreino: nx ? `${nx.id} ${nx.name}: ${nx.ex.slice(0, 6).map((e) => e.n).join(", ")}` : null,
+    pesos: (weights || []).slice(-10).map((w) => [w.day, +w.kg]),
+    musculosSemana: weekMuscleSets(settings, day),
+    dias: days.map(pick).filter(Boolean),
+  };
+}
+function CoachCard({ week, day, settings, log, saveLog, uid }) {
+  const [weights, setW] = useState(null), [busy, setBusy] = useState(false), [q, setQ] = useState(""), [ans, setAns] = useState(null), [err, setErr] = useState(null);
+  useEffect(() => { supabase.from("weights").select("day,kg").eq("user_id", uid).order("day").then(({ data }) => setW(data || [])); }, [uid]);
+  const saved = log.checks?._coach;
+  async function call(question) {
+    setBusy(true); setErr(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const r = await fetch("/api/coach", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ ctx: coachCtx({ week, day, settings, weights }), question }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error === "nokey" ? "Falta a chave da IA na Vercel." : "Não consegui falar com o coach agora.");
+      if (question) setAns(j.text); else saveLog({ checks: { _coach: { text: j.text, at: new Date().toISOString() } } });
+      buzz(30);
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  return (
+    <section className="card now">
+      <div className="mh"><span className="lbl now-lbl">🧠 Seu coach hoje</span>{saved && <button className="sm" disabled={busy} onClick={() => call()}>{busy ? "..." : "Atualizar"}</button>}</div>
+      {saved ? <div className="coach-txt">{saved.text}</div>
+        : <button className="pri big" disabled={busy || !weights} onClick={() => call()}>{busy ? "Lendo seus dados..." : "Gerar meu plano de hoje"}</button>}
+      <div className="row" style={{ marginTop: 8 }}>
+        <input className="exsearch" style={{ margin: 0 }} placeholder="Pergunte: ex. posso comer pizza hoje?" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q.trim() && call(q)} />
+        <button className="sm" disabled={busy || !q.trim()} onClick={() => call(q)}>Perguntar</button>
+      </div>
+      {ans && <div className="coach-txt" style={{ marginTop: 8 }}>{ans}<div><button className="link" onClick={() => { setAns(null); setQ(""); }}>fechar</button></div></div>}
+      {err && <div className="tag warn">{err}</div>}
+    </section>
   );
 }
