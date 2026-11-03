@@ -24,8 +24,10 @@ function Home() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     return () => data.subscription.unsubscribe();
   }, []);
+  useEffect(() => { if (session?.user?.user_metadata?.training_pilot) location.replace("/treino"); }, [session?.user?.id]);
   if (session === undefined) return <div className="wrap"><p className="tag">Carregando…</p></div>;
   if (!session) return <Login />;
+  if (session.user.user_metadata?.training_pilot) return <div className="wrap"><p>Abrindo seu treino…</p></div>;
   return <DataProvider key={session.user.id} uid={session.user.id}><App uid={session.user.id} /></DataProvider>;
 }
 
@@ -184,6 +186,7 @@ function App({ uid }) {
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
           <h1>Protocolo Victor</h1>
+          <a href="/treino" className="tag">Treino personalizado e convites →</a>
           <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · ~1.990 kcal · 199 g PTN`}</div>
         </div>
       </header>

@@ -1,5 +1,5 @@
-const CACHE = "protocolo-v26";
-self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.json", "/icon-192.png"]).catch(() => {}))); });
+const CACHE = "protocolo-v27";
+self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/treino", "/manifest.json", "/training-manifest.json", "/icon-192.png"]).catch(() => {}))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith("protocolo-v") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 
 self.addEventListener("fetch", (e) => {
@@ -17,11 +17,11 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   // páginas: rede primeiro, cache se estiver offline
-  if (req.mode === "navigate" && url.pathname === "/") {
+  if (req.mode === "navigate" && ["/", "/treino"].includes(url.pathname)) {
     e.respondWith(fetch(req).then(async (res) => {
-      if (res.ok) { const cache = await caches.open(CACHE); await cache.put("/", res.clone()); }
+      if (res.ok) { const cache = await caches.open(CACHE); await cache.put(url.pathname, res.clone()); }
       return res;
-    }).catch(async () => (await caches.match("/")) || Response.error()));
+    }).catch(async () => (await caches.match(url.pathname)) || Response.error()));
   }
 });
 

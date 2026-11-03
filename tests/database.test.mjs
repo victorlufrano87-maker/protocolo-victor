@@ -10,7 +10,7 @@ await db.exec(`
   create schema auth; create schema storage;
   create table auth.users(id uuid primary key);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-  create table storage.buckets(id text primary key, name text, public boolean);
+  create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
   create table storage.objects(bucket_id text, name text);
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql immutable as $$ select string_to_array(name,'/') $$;
@@ -25,6 +25,8 @@ await db.exec(`grant select,insert,update,delete on all tables in schema public 
 const migration = await readFile(new URL("../supabase/migrations/20261103_reliability.sql", import.meta.url), "utf8");
 await db.exec(migration);
 await db.exec(migration); // Safe to rerun after an interrupted deployment.
+const trainingMigration=await readFile(new URL("../supabase/migrations/20261103_training_pilot.sql",import.meta.url),"utf8");
+await db.exec(trainingMigration);await db.exec(trainingMigration);
 const as = async (role, uid, fn) => {
   await db.exec(`set role ${role}; select set_config('request.jwt.claim.sub','${uid || ""}',false)`);
   try { return await fn(); } finally { await db.exec("reset role"); }
@@ -96,3 +98,23 @@ test("database migration, RLS, atomic writes, idempotency and delivery leases", 
 });
 
 test.after(() => db.close());
+test("training data and photos stay separated between accounts",async()=>{
+ await as("service_role","",async()=>{
+  await db.query("insert into training_profiles(user_id,answers,photo_consent) values($1,'{}',true),($2,'{}',false)",[owner,other]);
+  await db.query("insert into training_members(user_id,email,invited_by,status) values($1,'test@example.com',$2,'paused')",[other,owner]);
+  await db.query("insert into training_plans(user_id,profile_version,profile_snapshot,plan) values($1,now(),'{}','{}')",[owner]);
+ });
+ await as("authenticated",other,async()=>{
+  assert.equal((await db.query("select * from training_profiles")).rows.length,1);
+  assert.equal((await db.query("select * from training_plans")).rows.length,0);
+  await assert.rejects(db.query("insert into training_plans(user_id,profile_version,profile_snapshot,plan) values($1,now(),'{}','{}')",[other]));
+  await assert.rejects(db.query("update training_members set status='active'"));
+  await assert.rejects(db.query("insert into storage.objects values('training-photos',$1)",[`${other}/private.jpg`]));
+  await assert.rejects(db.query("insert into storage.objects values('training-photos',$1)",[`${owner}/private.jpg`]));
+ });
+ await as("authenticated",owner,async()=>{
+  await db.query("insert into storage.objects values('training-photos',$1)",[`${owner}/private.jpg`]);
+  assert.equal((await db.query("select * from storage.objects where bucket_id='training-photos'")).rows.length,1);
+ });
+ await as("authenticated",other,async()=>assert.equal((await db.query("select * from storage.objects where bucket_id='training-photos'")).rows.length,0));
+});
