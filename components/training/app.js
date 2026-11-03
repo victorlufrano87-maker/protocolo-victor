@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TrainingLibrary, TrainingMuscles, ExerciseGuide } from "./exercises";
 import { TrainingLogin, SetPassword } from "./auth";
 import { supabase, fmtDay } from "@/lib/supabase";
 import { compress } from "@/lib/photos";
@@ -187,7 +188,7 @@ function TrainingSpace({
     gate = profile ? screening(profile) : null,
     hasPain = allSessions.some(s => s.feedback?.pain),
     stale = data.plan && new Date(data.plan.profile_version).getTime() !== new Date(data.profile?.updated_at).getTime();
-  if (active) return <Session uid={uid} plan={data.plan} workout={active} onClose={() => setActive(null)} onComplete={completed} />;
+  if (active) return <Session uid={uid} sessions={allSessions} plan={data.plan} workout={active} onClose={() => setActive(null)} onComplete={completed} />;
   if (mode === "wizard") return <main className="training"><Brand />{error && <p className="tr-alert" role="alert">{error}</p>}<Wizard uid={uid} initial={profile} busy={busy} onSave={profileSaved} onExit={() => setMode("dashboard")} /></main>;
   if (mode === "photo") return <main className="training"><Brand /><PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} /><button className="tr-primary" disabled={busy} onClick={generate}>{busy ? "Preparando sua proposta…" : "Continuar e montar meu treino"}</button>{error && <p role="alert">{error}</p>}</main>;
   return <main className="training"><Brand /><div className="tr-topline"><span>{profile ? `Olá, ${profile.name.split(" ")[0]}` : "BEM-VINDO AO SEU ESPAÇO"}</span><span className="tr-small" role="status">{pending.length ? `${pending.length} sessão(ões) aguardando envio` : offline ? "Modo offline" : "Conectado"}</span></div>{error && <p className="tr-alert" role="alert">{error}</p>}
@@ -198,10 +199,11 @@ function TrainingSpace({
         setActive(w);
       }} />}
  </>}
+ {tab === "exercises" && <TrainingLibrary />}
  {tab === "progress" && <><div className="tr-hero"><span className="tr-eyebrow">CONSISTÊNCIA, UM DIA POR VEZ</span><h1>Seu caminho<br />até aqui.</h1></div><div className="tr-metrics"><span><b>{allSessions.length}</b>sessões registradas</span><span><b>{allSessions[0]?.feedback?.effort || "—"}</b>último esforço /10</span></div>{!allSessions.length && <p>Seu primeiro registro aparece aqui depois do treino.</p>}{allSessions.map(s => <article className="tr-card" key={s.id}><div className="tr-row"><b>{date(s.completed_at || s.completedAt || s.created_at)}</b><span className="tr-tag">{pending.some(x => x.id === s.id) ? "No celular" : "Sincronizado"}</span></div><p>{s.sets.length} séries · esforço {s.feedback.effort}/10 · {s.feedback.pain ? "Dor relatada — avaliação necessária" : "Sem dor relatada"}</p></article>)}{profile && <PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} />}</>}
  {tab === "account" && <><h1>Seu espaço.</h1><section className="tr-card"><h2>Seu perfil</h2><p>{profile ? `${profile.name} · ${profile.age} anos` : "Seu perfil ainda não foi preenchido."}</p><button onClick={() => setMode("wizard")}>Revisar perguntas e preferências</button><p className="tr-small">Ao salvar novas respostas, a proposta anterior fica desatualizada. Suas sessões anteriores continuam no histórico.</p></section><section className="tr-card"><h2>Privacidade e limites</h2><p>A foto é opcional, privada dentro do aplicativo e não é enviada à IA. Não estimamos gordura nem diagnosticamos condições pela imagem.</p><p>O responsável técnico pelo banco pode administrar os arquivos. Evite mostrar o rosto ou outras pessoas.</p><p>O plano é uma proposta inicial de treino, não uma avaliação presencial. Técnica, sintomas e recuperação importam mais que uma meta de carga.</p><p className="tr-small">Você pode excluir fotos na área Evolução. Respostas e registros ficam na sua conta.</p></section><button onClick={() => supabase.auth.signOut()}>Sair da conta</button>{data.isOwner && <a className="tr-link" href="/">Voltar ao meu aplicativo pessoal</a>}</>}
  {tab === "invites" && data.isOwner && <Invites />}
- <nav className="tr-nav">{[["plan", "Treino"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Clientes"]] : [])].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => {
+ <nav className="tr-nav">{[["plan", "Treino"], ["exercises", "Exercícios"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Clientes"]] : [])].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => {
         setTab(key);
         window.scrollTo(0, 0);
       }}>{label}</button>)}</nav>
@@ -284,6 +286,7 @@ function PlanView({
 }) {
   const plan = record.plan;
   return <><div className="tr-hero"><span className="tr-eyebrow">UMA PROPOSTA PARA AS PRÓXIMAS 4 SEMANAS</span><h1>Seu próximo passo<br />está aqui.</h1><p>{GOALS.find(([id]) => id === plan.goal)?.[1]} · {profile.minutes} min disponíveis</p></div><div className="tr-row"><span className="tr-tag">{plan.source === "ai_assisted" ? "Com apoio da IA" : "Plano base personalizado"}</span><span className="tr-small">Criado em {date(record.created_at)}</span></div><p className="tr-intro">{plan.explanation}</p>{profile.aiConsent && plan.source !== "ai_assisted" && <p className="tr-small">A explicação opcional da IA não ficou disponível. A proposta base usa suas respostas e pode ser utilizada sem ela.</p>}
+ <TrainingMuscles plan={plan} sessions={sessions} />
  {plan.workouts.map((w, i) => <article className="tr-card tr-workout" key={w.id}><div className="tr-row"><span className="tr-eyebrow">{DAYS.find(([id]) => id === w.day)?.[1]}</span><span className="tr-tag">~{w.minutes} min</span></div><h2>{w.kind === "strength" ? `Treino ${String.fromCharCode(65 + i)} · corpo todo` : w.name}</h2><p>{w.kind === "strength" ? `${w.exercises.length} exercícios · reserva de 2–3 repetições` : w.guidance}</p>{w.kind === "strength" && <div className="tr-exercise-list">{w.exercises.map(x => <div key={x.id}><span>{x.name}</span><b>{x.sets} × {x.reps}</b></div>)}</div>}<button className="tr-primary" onClick={() => onStart(w)}>{w.kind === "strength" ? "Começar este treino" : "Registrar atividade leve"}</button></article>)}
  <details className="tr-card"><summary>Como evoluir sem atropelar etapas</summary><p>{plan.progression}</p>{plan.notes.map(n => <p key={n}>{n}</p>)}<p>Desconforto muscular comum não é o mesmo que dor forte, aguda ou articular. Pare um movimento doloroso e busque orientação.</p></details><button disabled={busy} onClick={onGenerate}>{busy ? "Ajustando…" : "Reavaliar proposta com meus registros"}</button><p className="tr-small">O app reavalia a proposta após 3 sessões sincronizadas desta versão, ou quando você pedir. Esforço e recuperação ajudam a reduzir volume; dor pausa a rotina. Cargas nunca aumentam sozinhas.</p></>;
 }
@@ -351,6 +354,7 @@ function PhotoPanel({
 }
 function Session({
   uid,
+  sessions,
   plan,
   workout,
   onClose,
@@ -390,6 +394,8 @@ function Session({
   }
   const slot = workout.exercises[index],
     exercise = slot ? CATALOG.find(x => x.id === draft.swaps[slot.id]) || slot : null;
+  const lastExercise = [...sessions].sort((a, b) => String(b.completed_at || b.completedAt || b.created_at).localeCompare(String(a.completed_at || a.completedAt || a.created_at))).find(s => s.sets?.some(x => x.exerciseId === exercise?.id));
+  const lastSets = lastExercise?.sets.filter(x => x.exerciseId === exercise?.id) || [];
   function setDone(i, reps, kg) {
     if (!reps || !Number.isFinite(+reps) || +reps < 1 || !Number.isFinite(+kg) || +kg < 0 || +kg > 500 || +reps > 100) {
       setError("Preencha repetições e carga. Para peso do corpo, use 0 kg.");
@@ -444,7 +450,7 @@ function Session({
           return;
         }
         onComplete(draft);
-      }}>Guardar minha sessão</button>{workout.kind === "strength" && <button onClick={() => setReview(false)}>Voltar aos exercícios</button>}</section> : <><div className="tr-hero"><span className="tr-eyebrow">EXERCÍCIO {index + 1} DE {workout.exercises.length}</span><h1>{exercise.name}</h1><p>{slot.sets} séries · {slot.reps} repetições · {slot.rest}s de descanso</p></div><details className="tr-card"><summary>Antes da primeira série: aquecimento</summary><p>{workout.warmup}</p></details><section className="tr-card"><h2>Faça com controle.</h2><ol>{exercise.cues.map(c => <li key={c}>{c}</li>)}</ol><p className="tr-small">Termine com cerca de {slot.rir} repetições de reserva. Se sentir dor, pare.</p>{slot.alternatives.length > 0 && <label>Precisa de uma alternativa?<select value={exercise.id} onChange={e => {
+      }}>Guardar minha sessão</button>{workout.kind === "strength" && <button onClick={() => setReview(false)}>Voltar aos exercícios</button>}</section> : <><div className="tr-hero"><span className="tr-eyebrow">EXERCÍCIO {index + 1} DE {workout.exercises.length}</span><h1>{exercise.name}</h1><p>{slot.sets} séries · {slot.reps} repetições · {slot.rest}s de descanso</p></div><details className="tr-card"><summary>Antes da primeira série: aquecimento</summary><p>{workout.warmup}</p></details><section className="tr-card tr-prescription"><h2>Seu objetivo neste exercício</h2><strong>{slot.sets} séries de {slot.reps} repetições</strong><p>Descanse {slot.rest} segundos entre as séries. Termine sentindo que conseguiria fazer mais {slot.rir} repetições com boa técnica.</p><p className="tr-small">Escolha uma carga leve o suficiente para manter o movimento controlado. Para exercícios sem peso externo, registre 0 kg.</p>{lastSets.length > 0 && <p>Último registro: {lastSets.map(s => `${s.reps} repetições × ${s.kg} kg`).join(" · ")}</p>}</section><ExerciseGuide exercise={exercise} /><section className="tr-card"><h2>Faça com controle.</h2><ol>{exercise.cues.map(c => <li key={c}>{c}</li>)}</ol><p className="tr-small">Termine com cerca de {slot.rir} repetições de reserva. Se sentir dor, pare.</p>{slot.alternatives.length > 0 && <label>Precisa de uma alternativa?<select value={exercise.id} onChange={e => {
             if (draft.sets.some(s => s.slotId === slot.id)) {
               setError("Para manter seu registro consistente, escolha a alternativa antes de registrar as séries deste exercício.");
               return;
@@ -458,16 +464,17 @@ function Session({
             });
           }}>{[slot.id, ...slot.alternatives].map(id => <option key={id} value={id}>{CATALOG.find(x => x.id === id)?.name}</option>)}</select></label>}</section><div className="tr-sets">{Array.from({
           length: slot.sets
-        }, (_, i) => <SetRow key={`${exercise.id}:${i}`} number={i + 1} initial={draft.sets.find(s => s.slotId === slot.id && s.index === i)} onDone={(r, k) => setDone(i, r, k)} />)}</div><div className="tr-row"><button disabled={index === 0} onClick={() => setIndex(index - 1)}>Anterior</button><button className="tr-primary" onClick={() => index === workout.exercises.length - 1 ? setReview(true) : setIndex(index + 1)}>{index === workout.exercises.length - 1 ? "Revisar e concluir" : "Próximo exercício →"}</button></div><button className="tr-text-button" onClick={() => setReview(true)}>Encerrar e registrar sessão parcial</button></>}{error && <p className="tr-alert" role="alert">{error}</p>}</main>;
+        }, (_, i) => <SetRow key={`${exercise.id}:${i}`} number={i + 1} target={slot.reps} initial={draft.sets.find(s => s.slotId === slot.id && s.index === i)} onDone={(r, k) => setDone(i, r, k)} />)}</div><div className="tr-row"><button disabled={index === 0} onClick={() => setIndex(index - 1)}>Anterior</button><button className="tr-primary" onClick={() => index === workout.exercises.length - 1 ? setReview(true) : setIndex(index + 1)}>{index === workout.exercises.length - 1 ? "Revisar e concluir" : "Próximo exercício →"}</button></div><button className="tr-text-button" onClick={() => setReview(true)}>Encerrar e registrar sessão parcial</button></>}{error && <p className="tr-alert" role="alert">{error}</p>}</main>;
 }
 function SetRow({
   number,
+  target,
   initial,
   onDone
 }) {
   const [reps, setReps] = useState(initial?.reps || ""),
     [kg, setKg] = useState(initial?.kg ?? 0);
-  return <div className={`tr-set ${initial ? "done" : ""}`}><b>Série {number}</b><label>Repetições<input aria-label={`Repetições da série ${number}`} inputMode="numeric" value={reps} onChange={e => setReps(e.target.value)} /></label><label>Carga (kg)<input aria-label={`Carga da série ${number}`} inputMode="decimal" value={kg} onChange={e => setKg(e.target.value.replace(",", "."))} /></label><button aria-label={`Registrar série ${number}`} onClick={() => onDone(reps, kg)}>{initial ? "✓ Salva" : "Feito"}</button></div>;
+  return <div className={`tr-set ${initial ? "done" : ""}`}><b>Série {number}<span className="tr-set-target">Meta: {target} reps</span></b><label>Repetições feitas<input placeholder={target}  aria-label={`Repetições da série ${number}`} inputMode="numeric" value={reps} onChange={e => setReps(e.target.value)} /></label><label>Carga (kg)<input aria-label={`Carga da série ${number}`} inputMode="decimal" value={kg} onChange={e => setKg(e.target.value.replace(",", "."))} /></label><button aria-label={`Registrar série ${number}`} onClick={() => onDone(reps, kg)}>{initial ? "✓ Salva" : "Feito"}</button></div>;
 }
 function Invites() {
   const [email, setEmail] = useState(""),

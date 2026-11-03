@@ -193,6 +193,30 @@ test("adult friend completes all questions, skips photo and gets a compatible ho
     fullPage: true
   });
 });
+test("library search, illustrated explanation, weekly map and per-set targets work for a friend", async ({ page }) => {
+  const profile = { user_id: uid, answers: healthy, updated_at: new Date().toISOString() };
+  const plan = { id: '33333333-3333-4333-8333-333333333333', profile_version: profile.updated_at, created_at: profile.updated_at, plan: buildPlan(healthy) };
+  const { errors } = await setup(page, { profile, plan });
+  await expect(page.getByRole('heading', { name: 'Músculos da semana' })).toBeVisible();
+  await page.getByRole('button', { name: 'Exercícios', exact: true }).click();
+  await page.getByRole('searchbox').fill('supino');
+  await expect(page.locator('.tr-library-grid button').first()).toContainText(/Supino/);
+  await page.locator('.tr-library-grid button').first().click();
+  await expect(page.getByRole('heading', { name: 'Como fazer' })).toBeVisible();
+  await expect(page.locator('.tr-library .exanim img').first()).toBeVisible();
+  await expect(page.locator('.tr-library .bodymap')).toBeVisible();
+  await page.getByRole('button', { name: 'Treino', exact: true }).click();
+  await page.getByRole('button', { name: 'Começar este treino', exact: true }).first().click();
+  await expect(page.locator('.tr-prescription')).toContainText('8–12 repetições');
+  await expect(page.locator('.tr-set-target').first()).toContainText('Meta: 8–12 reps');
+  await expect(page.getByRole('textbox', { name: 'Repetições da série 1', exact: true })).toHaveValue('');
+  await page.getByText('Ver execução e músculos trabalhados', { exact: true }).click();
+  await expect(page.locator('.tr-guide .bodymap')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: 'test-results/training-new-exercise.png', fullPage: true });
+});
+
 test("health concern pauses automatic generation after the questionnaire", async ({
   page
 }) => {

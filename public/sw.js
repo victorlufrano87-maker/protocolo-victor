@@ -1,4 +1,4 @@
-const CACHE = "protocolo-v28";
+const CACHE = "protocolo-v29";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/treino", "/manifest.json", "/training-manifest.json", "/icon-192.png"]).catch(() => {}))); });
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith("protocolo-v") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 
