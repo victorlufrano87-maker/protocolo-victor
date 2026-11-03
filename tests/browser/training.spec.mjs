@@ -184,7 +184,7 @@ test("adult friend completes all questions, skips photo and gets a compatible ho
   })).toBeVisible();
   expect(state.plan.plan.workouts.flatMap(w => w.exercises).every(x => !x.requires.length)).toBe(true);
   await expect(page.getByRole("button", {
-    name: "Convites",
+    name: "Clientes",
     exact: true
   })).toHaveCount(0);
   expect(errors).toEqual([]);

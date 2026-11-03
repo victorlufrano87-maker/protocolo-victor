@@ -19,8 +19,9 @@ const HealthTab = dynamic(() => import("@/components/health").then((m) => m.Heal
 function Home() {
   const [session, setSession] = useState(undefined);
   useEffect(() => {
+    if (new URLSearchParams(location.hash.slice(1)).has("error")) { location.replace("/treino" + location.hash); return; }
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = supabase.auth.onAuthStateChange((event, s) => { setSession(s); if (event === "PASSWORD_RECOVERY") location.replace("/treino?redefinir=1"); });
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
     return () => data.subscription.unsubscribe();
   }, []);

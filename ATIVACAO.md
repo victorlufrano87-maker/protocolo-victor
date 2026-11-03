@@ -8,7 +8,7 @@ Esta versão é uma proposta para revisão. A migração não foi aplicada ao Su
 2. No Supabase, abra **SQL Editor** e execute **supabase/migrations/20261103_reliability.sql**. Para um projeto novo, execute antes **supabase/schema.sql**. A migração pode ser executada novamente; não apaga diários, pesos ou fotos existentes.
 3. Em **Authentication → Users**, copie o **User UID** da sua conta. Na Vercel, cadastre esse valor como **APP_OWNER_ID** (variável exclusiva do servidor, sem prefixo NEXT_PUBLIC).
 4. Confirme que **SUPABASE_SERVICE_ROLE_KEY**, **ANTHROPIC_API_KEY** e **CRON_SECRET** estão configurados somente no servidor. **AI_DAILY_LIMIT** é opcional: o padrão é 40 chamadas/dia, com no máximo 6/minuto. A cota é compartilhada entre foto, balança e coach; tentativas que chegam ao provedor também consomem a cota.
-5. No Supabase, desative novos cadastros de usuários. Remover o botão de cadastro é apenas uma mudança na tela; não desativa o endpoint de cadastro do Supabase.
+5. Para a versão com cadastro direto de treino, ligue **Allow new users to sign up** no Supabase. O app pessoal e as APIs de alimentação/coach continuam restritos ao proprietário. Veja CADASTRO-DIRETO.md; a orientação anterior de desativar cadastros valia para o piloto restrito a convites.
 6. Revise e aprove o PR. A integração do GitHub com a Vercel pode criar uma prévia da branch automaticamente. Confirme que as variáveis de ambiente da prévia também foram configuradas antes de testá-la. Publicar/mesclar na main é uma etapa posterior de decisão do proprietário.
 7. Teste a prévia em um aparelho, depois publique a versão aprovada. Na Vercel, use **Node.js 22.x ou superior**, compatível com Next.js 16.4.5 e as ferramentas de teste.
 
