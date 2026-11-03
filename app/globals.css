@@ -302,3 +302,6 @@ nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
 .goalbtns{display:grid;gap:8px;margin-top:8px}
 .goalbtns button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px;border-radius:12px;text-align:left;min-height:0}
 .goalbtns button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+
+.hmet{padding:8px 0;border-top:1px solid var(--line)}.hmet:first-of-type{border-top:0}
+.hbars{display:flex;align-items:flex-end;gap:4px;height:38px;margin:6px 0}.hbars i{flex:1;background:var(--card2);border-radius:4px}

@@ -32,6 +32,7 @@ const I = {
   plan: <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7" />,
   check: <path d="m5 12 5 5 9-10" />,
   dumbbell: <path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12" />,
+  heart: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />,
   search: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>,
   camera: <path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
   cart: <path d="M3 4h2l2.5 11h11L21 7H6.5M9 20h.01M17 20h.01" />,
@@ -93,6 +94,7 @@ function App({ uid }) {
   const outbox = () => lsGet(`pv_out_${uid}`, []);
   const setOutbox = (l) => lsSet(`pv_out_${uid}`, l);
   const [offline, setOffline] = useState(false);
+  const [planSub, setPlanSub] = useState(null);
   async function pushDay(d) {
     const l = weekRef.current[d]; if (!l) return true;
     const { error } = await safe(supabase.from("day_logs").upsert({ user_id: uid, day: d, checks: l.checks || {}, swaps: l.swaps || {}, water_ml: l.water_ml || 0, free_meal: !!l.free_meal, workout_at: l.workout_at || null, updated_at: new Date().toISOString() }));
@@ -151,9 +153,12 @@ function App({ uid }) {
     // Apple Watch (atalho do app Saúde): ?ativa=520&repouso=1700&passos=8400
     { const q2 = new URLSearchParams(location.search), num = (k) => { const m = String(q2.get(k) || "").replace(/\./g, "").replace(",", ".").match(/\d+(\.\d+)?/); return m ? Math.round(+m[0]) : 0; };
       const ativa = num("ativa"), repouso = num("repouso"), passos = num("passos");
-      if (ativa || passos) {
+      const dec = (k) => { const m = String(q2.get(k) || "").replace(",", ".").match(/\d+(\.\d+)?/); return m ? Math.round(+m[0] * 10) / 10 : undefined; };
+      const extra = Object.fromEntries(["dist", "exerc", "andares", "fc", "vfc", "vo2", "spo2", "sono", "resp", "pe"].map((k) => [k, dec(k)]).filter(([, v]) => v != null && v > 0));
+      if (extra.spo2 && extra.spo2 <= 1) extra.spo2 = Math.round(extra.spo2 * 1000) / 10;
+      if (ativa || passos || Object.keys(extra).length) {
         const dd = q2.get("dia") === "ontem" ? addDays(e.day, -1) : e.day;
-        const cur = map[dd] || EMPTY, nx = { ...cur, checks: { ...(cur.checks || {}), _burn: { ativa, repouso, passos, at: new Date().toISOString() } } };
+        const cur = map[dd] || EMPTY, nx = { ...cur, checks: { ...(cur.checks || {}), _burn: { ...(cur.checks?._burn || {}), ...(ativa ? { ativa } : {}), ...(repouso ? { repouso } : {}), ...(passos ? { passos } : {}), ...extra, at: new Date().toISOString() } } };
         map[dd] = nx; setWeekBoth({ ...map });
         await supabase.from("day_logs").upsert({ user_id: uid, day: dd, checks: nx.checks, swaps: nx.swaps || {}, water_ml: nx.water_ml || 0, free_meal: !!nx.free_meal, workout_at: nx.workout_at || null });
         history.replaceState(null, "", "/"); setToast(`Watch: ${ativa} kcal ativas${passos ? ` · ${passos.toLocaleString("pt-BR")} passos` : ""}`); setTimeout(() => setToast(null), 3500);
@@ -269,8 +274,12 @@ function App({ uid }) {
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
       {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings, week, day }} />}
       {tab === "exer" && <><DayPlanner {...{ settings, saveSettings, log, saveLog, day, say }} /><ExLibrary {...{ settings, saveSettings }} /></>}
+      {tab === "saude" && <HealthTab {...{ week, day, weights: null }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
-      {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
+      {tab === "plano" && <>
+        <div className="seg">{[["plano", "Plano"], ["compras", `Compras${shopCount ? ` (${shopCount})` : ""}`]].map(([k, l]) => <button key={k} className={(planSub || "plano") === k ? "on" : ""} onClick={() => setPlanSub(k)}>{l}</button>)}</div>
+        {(planSub || "plano") === "plano" ? <Plan {...{ uid, settings, saveSettings, today, say }} /> : <Shopping {...{ settings, saveSettings, say }} />}
+      </>}
 
       {swapFor && <SwapSheet {...swapFor} addShop={addShop} current={log.swaps?.[swapFor.key]} onClose={() => setSwapFor(null)}
         onPick={(v) => { saveLog({ swaps: { [swapFor.key]: v || undefined } }); setSwapFor(null); say(v ? "Alimento trocado" : "Voltou ao original"); }} />}
@@ -279,9 +288,9 @@ function App({ uid }) {
       {party && <Confetti />}
 
       <nav>
-        {[["hoje", "Hoje", "today"], ["treino", "Treino", "dumbbell"], ["exer", "Exercícios", "search"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
+        {[["hoje", "Hoje", "today"], ["treino", "Treino", "dumbbell"], ["exer", "Exercícios", "search"], ["saude", "Saúde", "heart"], ["prog", "Progresso", "prog"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
           <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); scrollTo(0, 0); }}>
-            <span className="nav-ic"><Icon n={ic} s={22} />{k === "compras" && shopCount > 0 && <i className="badge">{shopCount}</i>}</span><span>{l}</span></button>)}
+            <span className="nav-ic"><Icon n={ic} s={22} />{k === "plano" && shopCount > 0 && <i className="badge">{shopCount}</i>}</span><span>{l}</span></button>)}
       </nav>
     </div>
   );
@@ -2675,5 +2684,51 @@ function DayPlanner({ settings, saveSettings, log, saveLog, day, say }) {
       {gym && <Gym w={gym} checks={log.checks || {}} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)}
         onDone={async () => { setGym(null); await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: "H" } }); say("Treino registrado"); }} />}
     </section>
+  );
+}
+
+/* ---------- ABA SAÚDE (dados do app Saúde via Atalho) ---------- */
+const HMET = [
+  ["Atividade", [["ativa", "Calorias ativas", "kcal", 500, "up"], ["repouso", "Calorias em repouso", "kcal", null, null], ["passos", "Passos", "", 8000, "up"], ["dist", "Distância", "km", 5, "up"], ["exerc", "Minutos de exercício", "min", 30, "up"], ["andares", "Andares subidos", "", 10, "up"]]],
+  ["Coração", [["fc", "FC em repouso", "bpm", null, "down", "60–70 é bom; cair com o tempo = coração mais em forma"], ["vfc", "Variabilidade (VFC)", "ms", null, "up", "mais alta = mais recuperado"], ["vo2", "VO₂ máx", "", 42, "up", "condicionamento aeróbico"], ["spo2", "Oxigenação", "%", 95, "up"], ["resp", "Frequência respiratória", "rpm", null, null]]],
+  ["Sono", [["sono", "Horas dormidas", "h", 7, "up", "meta: 7 h em 5+ noites"]]],
+];
+function HealthTab({ week, day }) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(day, i - 6));
+  const val = (d, k) => week[d]?.checks?._burn?.[k];
+  const lastDay = [...days].reverse().find((d) => week[d]?.checks?._burn);
+  const has = (k) => days.some((d) => val(d, k) != null);
+  const f = (v, u) => v == null ? "—" : (u === "h" || u === "km" ? String(Math.round(v * 10) / 10).replace(".", ",") : Math.round(v).toLocaleString("pt-BR"));
+  const bodyDays = Object.keys(week).filter((d) => week[d]?.checks?._bio).sort(), bio = bodyDays.length ? week[bodyDays.at(-1)].checks._bio : null;
+  return (
+    <>
+      <div className="card"><div className="mh"><h2>Saúde</h2><span className="tag">{lastDay ? `último envio: ${fmtDay(lastDay, { day: "2-digit", month: "2-digit" })} ${spNowTime(week[lastDay].checks._burn.at)}` : "sem dados ainda"}</span></div>
+        <div className="tag">Dados do app Saúde do iPhone (Apple Watch e balança), enviados pelo atalho <b>Watch</b>.</div></div>
+      {bio && <div className="card"><h3>Corpo · {fmtDay(bodyDays.at(-1), { day: "2-digit", month: "2-digit" })}</h3><div className="pre-grid">
+        <div><div className="lbl">Peso</div><b className="num">{f(bio.peso, "km")} kg</b></div>
+        <div><div className="lbl">Gordura</div><b className="num">{f(bio.gordura, "km")}%</b></div>
+        <div><div className="lbl">Massa magra</div><b className="num">{f(bio.magra, "km")} kg</b></div>
+      </div></div>}
+      {HMET.map(([g, ms]) => { const list = ms.filter(([k]) => has(k)); return (
+        <div key={g} className="card">
+          <h3>{g}</h3>
+          {list.length ? list.map(([k, l, u, goal, dir, hint]) => {
+            const vs = days.map((d) => val(d, k)), today = vs.at(-1), got = vs.filter((v) => v != null), avg = got.reduce((a, b) => a + b, 0) / got.length, mx = Math.max(...got, goal || 0);
+            const good = goal == null ? null : dir === "up" ? (today ?? avg) >= goal : (today ?? avg) <= goal;
+            return (
+              <div key={k} className="hmet">
+                <div className="mh"><span>{l}</span><b className={"num" + (good == null ? "" : good ? " okc" : " warn")}>{f(today ?? got.at(-1), u)} {u}</b></div>
+                <div className="hbars">{vs.map((v, i) => <i key={i} title={days[i]} style={{ height: v != null ? `${15 + ((v - Math.min(...got) * 0.8) / Math.max(1e-6, mx - Math.min(...got) * 0.8)) * 85}%` : "3px", opacity: v != null ? 1 : 0.25, background: i === 6 ? "var(--accent)" : undefined }} />)}</div>
+                <div className="tag" style={{ fontSize: 12 }}>média 7 dias: {f(avg, u)} {u}{goal ? ` · meta ${f(goal, u)}` : ""}{hint ? ` · ${hint}` : ""}</div>
+              </div>);
+          }) : <div className="tag">Sem dados. Adicione ao atalho: {ms.map(([, l]) => l).join(", ")}.</div>}
+        </div>); })}
+      <div className="card">
+        <h3>Como mandar mais dados</h3>
+        <div className="tag">No atalho <b>Watch</b>, repita "Localizar Amostras de Saúde + Calcular Estatísticas (Soma ou Média)" para cada dado e acrescente no link:</div>
+        <pre className="kit">{"&dist=  Distância (km, soma)\n&exerc= Minutos de exercício (soma)\n&andares= Andares (soma)\n&fc=    FC em repouso (média)\n&vfc=   Variabilidade da FC (média)\n&vo2=   VO₂ máx (último)\n&spo2=  Oxigênio no sangue (média)\n&resp=  Freq. respiratória (média)\n&sono=  Sono: horas (veja abaixo)"}</pre>
+        <div className="tag" style={{ fontSize: 12 }}>Sono: "Localizar Amostras de Saúde" tipo <b>Análise do Sono</b>, valor <b>Dormindo</b>, últimas 24 h → "Obter Detalhes" <b>Duração</b> → "Calcular Estatísticas" <b>Soma</b> → "Converter Medida" para <b>horas</b>.</div>
+      </div>
+    </>
   );
 }
