@@ -278,3 +278,12 @@ nav button span{font-size:10.5px}
 .bodymap{width:100%;height:auto;background:#fff;border-radius:12px}
 .dotc{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
 nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
+.pick-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px;margin:4px 0;border-radius:12px;text-align:left;min-height:0}
+.pick-row img{width:56px;height:42px;object-fit:cover;border-radius:8px;background:#fff;flex:none}
+.pick-row>span:nth-child(2){flex:1;display:flex;flex-direction:column}
+.pick-add{font-size:22px;color:var(--accent);padding:0 6px}
+.ed-row{display:flex;gap:8px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.ed-row>img{width:52px;height:40px;object-fit:cover;border-radius:8px;background:#fff;flex:none}
+.ed-nums{display:flex;gap:6px;margin-top:6px}.ed-nums label{display:flex;flex-direction:column;font-size:11px;color:var(--mute)}
+.ed-nums input{width:58px;padding:6px;font-size:14px}
+.ed-btns{display:flex;flex-direction:column;gap:4px}.ed-btns button{padding:4px 9px;min-height:0;font-size:13px}
