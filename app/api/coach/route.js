@@ -35,5 +35,5 @@ export async function POST(req) {
   const j = await r.json();
   const text = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
   if (!text) return Response.json({ error: "empty", detail: JSON.stringify(j).slice(0, 300) }, { status: 502 });
-  return Response.json({ text });
+  return Response.json({ text, usage: j.usage });
 }

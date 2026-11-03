@@ -231,6 +231,7 @@ function App({ uid }) {
     if (!error) lsSet(`pv_setdirty_${uid}`, false); else setOffline(true);
   }
 
+  _aiSink = (c) => saveSettings({ supplies: { ...(settings.supplies || {}), _aiSpent: Math.round(((settings.supplies?._aiSpent || 0) + c) * 10000) / 10000 } });
   // aplica uma vez o plano pesado da avaliação de 03/11
   useEffect(() => {
     if (!settings || !settings.user_id || offline) return;
@@ -1053,6 +1054,7 @@ function Plan({ uid, settings, saveSettings, today, say }) {
             {[300, 400, 500, 600, 750, 1000].map((v) => <option key={v} value={v}>{v} ml</option>)}</select></div>
       </div>
 
+      <AICredit settings={settings} saveSettings={saveSettings} />
       <ScaleShortcut />
       <Shortcuts />
 
@@ -2562,7 +2564,7 @@ function FoodPhoto({ checks, saveLog, say, mealName }) {
       const r = await fetch("/api/food", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ image: url.split(",")[1], note }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error === "nokey" ? "Falta configurar a chave da IA na Vercel (ANTHROPIC_API_KEY)." : j.error === "auth" ? "Faça login de novo." : "Não consegui ler a foto. Tente com mais luz e o prato inteiro.");
-      setRes(j); buzz(40);
+      trackAI(j.usage); setRes(j); buzz(40);
     } catch (e) { setErr(e.message); }
     setSt(null);
   }
@@ -2746,7 +2748,7 @@ function ScalePrint({ uid, saveLog, say }) {
       const r = await fetch("/api/food", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ images: imgs, mode: "scale" }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error === "nokey" ? "Falta configurar a chave da IA na Vercel (ANTHROPIC_API_KEY)." : "Não consegui ler o print.");
-      setRes(j); buzz(40);
+      trackAI(j.usage); const { usage: _u, ...jr } = j; setRes(jr); buzz(40);
     } catch (e) { setErr(e.message); }
     setSt(null);
   }
@@ -2773,6 +2775,12 @@ function ScalePrint({ uid, saveLog, say }) {
   );
 }
 
+/* ---------- CUSTO DA IA (estimado) ---------- */
+// preço estimado por milhão de tokens (US$) — ajuste em Plano se mudar
+const AI_PRICE = { in: 3, out: 15 };
+const aiCost = (u) => u ? ((u.input_tokens || 0) * AI_PRICE.in + (u.output_tokens || 0) * AI_PRICE.out) / 1e6 : 0;
+let _aiSink = null; // registrado pelo App para somar o gasto
+function trackAI(u) { try { if (u && _aiSink) _aiSink(aiCost(u)); } catch {} }
 /* ---------- COACH DIÁRIO (IA) ---------- */
 function coachCtx({ week, day, settings, weights }) {
   const days = Array.from({ length: 14 }, (_, i) => addDays(day, i - 13));
@@ -2798,6 +2806,7 @@ function CoachCard({ week, day, settings, log, saveLog, uid }) {
       const { data } = await supabase.auth.getSession();
       const r = await fetch("/api/coach", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ ctx: coachCtx({ week, day, settings, weights }), question }) });
       const j = await r.json(); if (!r.ok) throw new Error(j.error === "nokey" ? "Falta a chave da IA na Vercel." : `Não consegui falar com o coach agora (${j.error || r.status}${j.detail ? ": " + j.detail.slice(0, 120) : ""}).`);
+      trackAI(j.usage);
       if (question) setAns(j.text); else saveLog({ checks: { _coach: { text: j.text, at: new Date().toISOString() } } });
       buzz(30);
     } catch (e) { setErr(e.message); }
@@ -2815,5 +2824,24 @@ function CoachCard({ week, day, settings, log, saveLog, uid }) {
       {ans && <div className="coach-txt" style={{ marginTop: 8 }}>{ans}<div><button className="link" onClick={() => { setAns(null); setQ(""); }}>fechar</button></div></div>}
       {err && <div className="tag warn">{err}</div>}
     </section>
+  );
+}
+
+function AICredit({ settings, saveSettings }) {
+  const sp = settings.supplies || {}, bal = sp._aiBalance, spent = sp._aiSpent || 0, since = sp._aiSpentBase || 0;
+  const left = bal != null ? bal - (spent - since) : null;
+  const [v, setV] = useState("");
+  const f = (x) => "US$ " + x.toFixed(2).replace(".", ",");
+  return (
+    <div className="card">
+      <div className="mh"><h2>Créditos da IA</h2>{left != null && <b className={"num " + (left < 1 ? "warn" : "okc")}>{f(Math.max(0, left))}</b>}</div>
+      {bal != null ? <div className="tag">Saldo informado {f(bal)} − gasto desde então {f(spent - since)} (estimado). ~{Math.max(0, Math.floor(left / 0.012))} usos restantes.</div>
+        : <div className="tag">Informe o saldo que aparece em platform.claude.com para o app ir descontando a cada foto, print ou coach.</div>}
+      <div className="row" style={{ marginTop: 6 }}>
+        <input inputMode="decimal" placeholder="saldo atual, ex.: 4,05" value={v} onChange={(e) => setV(e.target.value)} style={{ width: 160 }} />
+        <button className="sm" onClick={() => { const n = parseFloat(v.replace(",", ".")); if (n >= 0) { saveSettings({ supplies: { ...sp, _aiBalance: n, _aiSpentBase: spent } }); setV(""); } }}>Atualizar saldo</button>
+      </div>
+      <div className="tag" style={{ fontSize: 12 }}>A Anthropic não deixa o app ler o saldo direto; isto é uma conta aproximada. Total gasto pelo app: {f(spent)}.</div>
+    </div>
   );
 }

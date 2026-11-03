@@ -43,10 +43,10 @@ export async function POST(req) {
   const txt = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   try {
     const out = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
-    if (mode === "scale") return Response.json(Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== 0)));
+    if (mode === "scale") return Response.json({ ...Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== 0)), usage: j.usage });
     const t = { kcal: 0, ptn: 0, carb: 0, gord: 0 };
     (out.itens || []).forEach((i) => { for (const k in t) t[k] += +i[k] || 0; });
     out.total = Object.fromEntries(Object.entries(t).map(([k, v]) => [k, Math.round(v)]));
-    return Response.json(out);
+    return Response.json({ ...out, usage: j.usage });
   } catch { return Response.json({ error: "parse" }, { status: 502 }); }
 }
