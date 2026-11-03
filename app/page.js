@@ -4,7 +4,7 @@ import { RECIPES } from "@/lib/recipes";
 import { WORKOUTS } from "@/lib/workouts";
 import { EXMETA } from "@/lib/exmeta";
 import { LIBRARY, GROUPS_EX, EQUIP, SUBS, subOf } from "@/lib/library";
-import { myWorkouts, suggestPlan, suggestWhy, nextLoad, fromLib, dayWorkout, FOCUS_LIST } from "@/lib/builder";
+import { myWorkouts, suggestPlan, suggestWhy, nextLoad, fromLib, dayWorkout, FOCUS_LIST, heavyPlan, HEAVY_V } from "@/lib/builder";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
@@ -216,6 +216,12 @@ function App({ uid }) {
     if (!error) lsSet(`pv_setdirty_${uid}`, false); else setOffline(true);
   }
 
+  // aplica uma vez o plano pesado da avaliação de 03/11
+  useEffect(() => {
+    if (!settings || !settings.user_id || offline) return;
+    if ((settings.supplies?._planV || 0) >= HEAVY_V) return;
+    saveSettings({ supplies: { ...(settings.supplies || {}), _workouts: heavyPlan(), _planV: HEAVY_V }, times: { ...(settings.times || {}), divs: 5, next: Math.max(0, (weekday(spNow().day) + 6) % 7) % 5 } });
+  }, [settings?.user_id, settings?.supplies?._planV, offline]);
   const s = score(log);
   const shopCount = (settings.supplies?._shop || []).length;
   async function addShop(name) {
