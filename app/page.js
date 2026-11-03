@@ -4,7 +4,7 @@ import { RECIPES } from "@/lib/recipes";
 import { WORKOUTS } from "@/lib/workouts";
 import { EXMETA } from "@/lib/exmeta";
 import { LIBRARY, GROUPS_EX, EQUIP, SUBS, subOf } from "@/lib/library";
-import { myWorkouts, suggestPlan, suggestWhy, nextLoad, fromLib } from "@/lib/builder";
+import { myWorkouts, suggestPlan, suggestWhy, nextLoad, fromLib, dayWorkout, FOCUS_LIST } from "@/lib/builder";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
@@ -252,7 +252,7 @@ function App({ uid }) {
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
       {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings, week, day }} />}
-      {tab === "exer" && <ExLibrary {...{ settings, saveSettings }} />}
+      {tab === "exer" && <><DayPlanner {...{ settings, saveSettings, log, saveLog, day, say }} /><ExLibrary {...{ settings, saveSettings }} /></>}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
@@ -2621,5 +2621,34 @@ function Expenditure({ weights, week, day }) {
       <div className="verdict" style={{ marginTop: 8 }}>{wk <= -0.6 ? "Perdendo rápido demais: risco de perder músculo. Considere comer ~150 kcal a mais." : wk <= -0.2 ? "Ritmo bom de perda. Mantenha." : `Para perder ~0,4 kg/semana, o alvo seria ~${f0(target)} kcal/dia (hoje o plano tem ${f0(KCAL_GOAL)}). Antes de cortar, confira se está marcando tudo.`}</div>
       <div className="tag" style={{ fontSize: 12 }}>Estimativa pela tendência do peso + o que você marcou (fotos do prato contam mais). Água e sal fazem o número oscilar; fica mais preciso com o tempo.</div>
     </div>
+  );
+}
+
+/* ---------- O QUE VOCÊ QUER HOJE? ---------- */
+function DayPlanner({ settings, saveSettings, log, saveLog, day, say }) {
+  const [goal, setGoal] = useState(null), [focus, setFocus] = useState("Automático"), [gym, setGym] = useState(null), [seed, setSeed] = useState(0);
+  const cnt = weekMuscleSets(settings, day);
+  const pri = [["Peito", ["peitoral"], 14], ["Costas", ["dorsal", "meio das costas"], 14], ["Braço", ["bíceps", "tríceps"], 24], ["Ombros", ["ombros"], 12], ["Pernas", ["quadríceps", "posterior de coxa", "glúteos"], 12]];
+  const low = pri.map(([g, ms, goalN]) => [g, ms.reduce((a, m) => a + (cnt[m] || 0), 0) / goalN]).sort((a, b) => a[1] - b[1])[0][0];
+  const w = goal ? dayWorkout({ goal, focus, seed: day + seed, favs: settings.supplies?._fav || [], lowGroup: low }) : null;
+  const GOALS = [["massa", "💪 Ganhar massa", "4×8–10 pesado, descanso longo"], ["gordura", "🔥 Queimar gordura", "circuito 3×15, descanso curto + 25 min de cardio"], ["rapido", "⚡ Rápido 30 min", "o essencial em pouco tempo"]];
+  return (
+    <section className="card now" style={{ marginBottom: 12 }}>
+      <div className="lbl now-lbl">O que você quer hoje?</div>
+      <div className="goalbtns">{GOALS.map(([k, l, d]) => <button key={k} className={goal === k ? "on" : ""} onClick={() => { buzz(); setGoal(goal === k ? null : k); }}><b>{l}</b><span className="tag">{d}</span></button>)}</div>
+      {goal && <>
+        <div className="lbl" style={{ marginTop: 8 }}>Foco</div>
+        <div className="seg">{["Automático", ...FOCUS_LIST].map((f) => <button key={f} className={focus === f ? "on" : ""} onClick={() => setFocus(f)}>{f === "Automático" ? `🤖 Automático (${low})` : f}</button>)}</div>
+        <div className="tag" style={{ fontSize: 12 }}>{focus === "Automático" ? `Escolhi ${low.toLowerCase()} porque é o que menos treinou nesta semana.` : ""}</div>
+        <div className="lbl" style={{ marginTop: 8 }}>{w.name} · {w.ex.length} exercícios</div>
+        {w.ex.map((e, i) => <div key={i} className="mh" style={{ fontSize: 13, padding: "3px 0" }}><span style={{ flex: 1, minWidth: 0 }}>{i + 1}. {e.n}</span><span className="num tag">{e.s}×{e.r}{e.rest ? ` · ${e.rest}s` : ""}</span></div>)}
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className="pri big grow" onClick={() => { buzz(); setGym(w); }}><Icon n="dumbbell" s={18} /> Começar</button>
+          <button className="sm" onClick={() => setSeed(seed + 1)}>🔄 Outros exercícios</button>
+        </div>
+      </>}
+      {gym && <Gym w={gym} checks={log.checks || {}} saveLog={saveLog} settings={settings} saveSettings={saveSettings} onClose={() => setGym(null)}
+        onDone={async () => { setGym(null); await saveLog({ workout_at: new Date().toISOString(), checks: { _wk: "H" } }); say("Treino registrado"); }} />}
+    </section>
   );
 }
