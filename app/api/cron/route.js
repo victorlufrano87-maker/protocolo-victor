@@ -89,7 +89,7 @@ export async function GET(req) {
 
     // treino
     if (!log?.workout_at && inWin(min, toMin(trainTime(times, day))))
-      msgs.push(["treino", `Hora do treino ${nextL}`, 'Abra o MFIT. Ao terminar, toque em "Terminei o treino" para liberar o pós-treino.']);
+      msgs.push(["treino", `Hora do treino ${nextL}`, 'Abra o app → Começar treino. Ao terminar, o pós-treino aparece na lista.']);
 
     // suplementos pendentes: reforço 30 e 60 min depois do horário
     for (const m of MEALS) {

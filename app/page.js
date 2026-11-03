@@ -399,7 +399,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
             <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b>{WS[nextIdx] && <span className="tag">· {WS[nextIdx].name}</span>}</div>
             {WS[nextIdx] && <button className="pri big" onClick={() => setGym(WS[nextIdx])}><Icon n="dumbbell" s={18} /> Começar treino ({WS[nextIdx].ex.length} exercícios)</button>}
             <div className="row">
-              <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> MFIT</a>
               <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
             </div>
             <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
@@ -476,7 +475,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
         if (allDone) return null;
         return <section className="card">
           <div className="mh"><h3>Seguiu o PDF hoje?</h3></div>
-          <div className="tag" style={{ fontSize: 12 }}>Marca todas as refeições, suplementos e 2,6 L de água de uma vez. Use só se cumpriu mesmo: é isso que vai para o personal.</div>
+          <div className="tag" style={{ fontSize: 12 }}>Marca todas as refeições, suplementos e 2,6 L de água de uma vez. Use só se cumpriu mesmo: é isso que entra no seu progresso.</div>
           <button className={confirmAll ? "ok big" : "pri"} onClick={() => {
             if (!confirmAll) { setConfirmAll(true); setTimeout(() => setConfirmAll(false), 4000); return; }
             const c = {}; main.forEach((m) => { if (checks._free === m.id) return; m.items.forEach((_, i) => { c[`${m.id}-${i}`] = true; }); });
@@ -550,7 +549,6 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
             <div className="big-line">Hoje: <b className="letter">Treino {LETTERS[nextIdx]}</b>{WS[nextIdx] && <span className="tag">· {WS[nextIdx].name}</span>}</div>
             {WS[nextIdx] && <button className="pri big" onClick={() => setGym(WS[nextIdx])}><Icon n="dumbbell" s={18} /> Começar treino ({WS[nextIdx].ex.length} exercícios)</button>}
             <div className="row">
-              <a className="btn" href={MFIT_URL} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> MFIT</a>
               <button className="ok grow" onClick={workoutDone}><Icon n="dumbbell" s={18} /> Terminei o treino</button>
             </div>
             <div className="tag">Ao terminar, o pós-treino entra na sua lista e o próximo treino avança.</div>
@@ -886,7 +884,7 @@ Feedback: ${feedback || "—"}`;
 
       <div className="card">
         <div className="mh"><h2>Check-in semanal</h2>{!ciOpen && <button className="sm" onClick={() => setCiOpen(true)}>Fazer agora</button>}</div>
-        {lastCi ? <div className="tag">Último ({fmtDay(ciDays.at(-1), { day: "2-digit", month: "2-digit" })}): {CI_FIELDS.map(([k, l]) => `${l} ${lastCi[k]}`).join(" · ")}</div> : <div className="tag">Nenhum check-in ainda. Ele entra no kit de atualização para o personal.</div>}
+        {lastCi ? <div className="tag">Último ({fmtDay(ciDays.at(-1), { day: "2-digit", month: "2-digit" })}): {CI_FIELDS.map(([k, l]) => `${l} ${lastCi[k]}`).join(" · ")}</div> : <div className="tag">Nenhum check-in ainda. Ele entra no resumo para compartilhar.</div>}
         {ciOpen && <CheckinForm initial={week[day]?.checks?._ci} onSave={(ci) => { saveLog({ checks: { _ci: ci } }); setCiOpen(false); }} />}
       </div>
 
@@ -908,8 +906,8 @@ Feedback: ${feedback || "—"}`;
       </div>
 
       <div className="card">
-        <h2>Kit de atualização</h2>
-        <div className="tag">{settings.update_date ? `Próxima: ${fmtDay(settings.update_date, { day: "2-digit", month: "2-digit" })}. ` : "Defina a data em Plano. "}Escreva o feedback, copie e mande no WhatsApp junto com as fotos.</div>
+        <h2>Resumo para compartilhar</h2>
+        <div className="tag">Escreva o feedback, copie e mande no WhatsApp junto com as fotos.</div>
         <textarea id="fb" rows="3" placeholder="Como está se sentindo, dificuldades, progresso…" value={feedback} onChange={(e) => setFeedback(e.target.value)} />
         <pre className="kit">{kit}</pre>
         <button className="pri" onClick={async () => { try { await navigator.clipboard.writeText(kit); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {} }}>{copied ? "Copiado" : "Copiar resumo"}</button>
@@ -992,19 +990,12 @@ function Plan({ uid, settings, saveSettings, today, say }) {
       </div>
 
       <div className="card">
-        <h2>Treino (MFIT)</h2>
+        <h2>Treino</h2>
         <div className="tag">Siga a ordem das divisões, não o dia da semana.</div>
         <div className="mh"><span>Divisões</span>
           <select id="divs" value={divs} onChange={(e) => setT("divs", +e.target.value)}>{[2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{LETTERS.slice(0, n).split("").join("-")}</option>)}</select></div>
         <div className="mh"><span>Próximo treino</span>
           <select id="next" value={+(T.next || 0) % divs} onChange={(e) => setT("next", +e.target.value)}>{LETTERS.slice(0, divs).split("").map((l, i) => <option key={l} value={i}>Treino {l}</option>)}</select></div>
-      </div>
-
-      <div className="card">
-        <h2>Atualização com o personal</h2>
-        <div className="tag">Aviso na véspera e no dia, às 7h30.</div>
-        <div className="row"><input id="upd" type="date" value={settings.update_date || ""} onChange={(e) => saveSettings({ update_date: e.target.value || null })} />
-          {left !== null && <span className="tag">{left > 0 ? `faltam ${left} dias` : left === 0 ? "é hoje" : "atrasada"}</span>}</div>
       </div>
 
       <Stock {...{ settings, saveSettings, today }} />
@@ -1013,7 +1004,6 @@ function Plan({ uid, settings, saveSettings, today, say }) {
         <h2>Pré-treino</h2>
         <div className="tag">{PREWORKOUT.name}: <b style={{ color: "var(--fg)" }}>{PREWORKOUT.dose}</b> {PREWORKOUT.how}. {PREWORKOUT.rest}</div>
         <div className="tag">{PREWORKOUT.note}</div>
-        <div className="tag">Não está no plano do nutricionista: vale avisar o personal que você usa.</div>
       </div>
 
       <div className="card">
@@ -1028,7 +1018,6 @@ function Plan({ uid, settings, saveSettings, today, say }) {
 
       <ScaleShortcut />
       <Shortcuts />
-      <PersonalLink {...{ settings, saveSettings, say }} />
 
       <div className="card">
         <h2>Receitas do plano</h2>
@@ -1532,11 +1521,49 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
   const key = (i) => `${w.id}${i}`;
   const total = w.ex.reduce((a, e) => a + e.s, 0), done = w.ex.reduce((a, e, i) => a + Math.min(e.s, sets[key(i)] || 0), 0);
   const cur = w.ex.findIndex((e, i) => (sets[key(i)] || 0) < e.s);
-  function doSet(i, e) { const n = (sets[key(i)] || 0) + 1; buzz(); saveLog({ checks: { _sets: { ...sets, [key(i)]: Math.min(n, e.s) } } }); if (n < e.s || i < w.ex.length - 1) setRest(e.rest || 45); }
+  const setlog = checks._setlog || {};
+  const [repIn, setRepIn] = useState("");
+  const [summary, setSummary] = useState(false);
+  function doSet(i, e) {
+    const n = (sets[key(i)] || 0) + 1; buzz();
+    const kg = parseFloat(String(loads[e.n] ?? "").replace(",", ".")) || 0, r = parseInt(repIn || String(e.r)) || 0;
+    const sl = [...(setlog[key(i)] || []), { kg, r }];
+    saveLog({ checks: { _sets: { ...sets, [key(i)]: Math.min(n, e.s) }, _setlog: { ...setlog, [key(i)]: sl }, ...(checks._wstart ? {} : { _wstart: new Date().toISOString() }) } });
+    if (kg > 0) { const eh = settings.supplies?._exHist || {}, lh = settings.supplies?._loadHist || {}, d = spNow().day; saveSettings({ supplies: { ...settings.supplies, _loadHist: { ...lh, [e.n]: { ...(lh[e.n] || {}), [d]: Math.max(kg, lh[e.n]?.[d] || 0) } }, ...(r > 0 ? { _exHist: { ...eh, [e.n]: { ...(eh[e.n] || {}), [d]: sl } } } : {}) } }); }
+    setRepIn("");
+    if (n < e.s || i < w.ex.length - 1) setRest(e.rest || 45);
+  }
+  const finishW = () => { buzz(80); setSummary(true); };
+
   const setLoad = (e, val) => { const v = parseFloat(String(val).replace(",", ".")); const h = settings.supplies?._loadHist || {}; saveSettings({ supplies: { ...settings.supplies, _loads: { ...loads, [e.n]: val }, ...(v > 0 ? { _loadHist: { ...h, [e.n]: { ...(h[e.n] || {}), [spNow().day]: v } } } : {}) } }); };
   const [guided, setGuided] = useState(true);
   const [ix, setIx] = useState(Math.max(0, cur));
-  if (guided) {
+  if (summary) {
+    const today = spNow().day, lh = settings.supplies?._loadHist || {};
+    const rows = w.ex.map((e, i) => {
+      const sl = setlog[key(i)] || [], kg = Math.max(0, ...sl.map((x) => x.kg));
+      const prev = Math.max(0, ...Object.entries(lh[e.n] || {}).filter(([d]) => d < today).map(([, v]) => v));
+      return { e, sl, kg, pr: kg > 0 && prev > 0 && kg > prev ? kg - prev : 0, first: kg > 0 && prev === 0 };
+    });
+    const nSets = rows.reduce((a, x) => a + x.sl.length, 0), vol = rows.reduce((a, x) => a + x.sl.reduce((b, y) => b + y.kg * y.r, 0), 0);
+    const mins = checks._wstart ? Math.round((Date.now() - new Date(checks._wstart)) / 60000) : null;
+    const prs = rows.filter((x) => x.pr > 0);
+    return (
+      <div className="gym">
+        <div className="done-hero"><div style={{ fontSize: 46 }}>🎉</div><h2>Treino {w.id} concluído!</h2><div className="tag">{w.name}</div></div>
+        <div className="pre-grid">
+          <div><div className="lbl">Tempo</div><b className="num">{mins != null && mins < 300 ? `${mins} min` : "—"}</b></div>
+          <div><div className="lbl">Séries</div><b className="num">{nSets}</b></div>
+          <div><div className="lbl">Volume</div><b className="num">{vol ? `${Math.round(vol).toLocaleString("pt-BR")} kg` : "—"}</b><span className="tag">carga × reps</span></div>
+        </div>
+        {prs.length > 0 ? <div className="verdict ok" style={{ margin: "12px 0" }}>🔥 {prs.length === 1 ? "Recorde novo" : `${prs.length} recordes novos`}: {prs.map((x) => `${x.e.n.split(" (")[0]} +${String(x.pr).replace(".", ",")} kg`).join(" · ")}</div>
+          : <div className="verdict" style={{ margin: "12px 0" }}>Treino feito é treino que conta. Na próxima, tente +1 repetição ou +1–2 kg.</div>}
+        <div className="lbl">Resumo</div>
+        {rows.filter((x) => x.sl.length).map((x) => <div key={x.e.n} className="mh" style={{ fontSize: 13, padding: "4px 0" }}><span style={{ flex: 1, minWidth: 0 }}>{x.e.n}</span><span className="num">{x.sl.map((y) => (y.kg ? `${y.r}×${String(y.kg).replace(".", ",")}` : y.r)).join(" · ")}</span></div>)}
+        <button className="ok big" style={{ marginTop: 14 }} onClick={onDone}><Icon n="check" /> Salvar e fechar</button>
+      </div>
+    );
+  }  if (guided) {
     const e = w.ex[ix], n = sets[key(ix)] || 0, ok = n >= e.s;
     const steps = String(e.tip || "").split(/(?<=\.)\s+/).filter(Boolean);
     if (!/min|s$/.test(String(e.r))) steps.push("Ritmo: 1 segundo fazendo força, 2 segundos voltando devagar.", "Respire: solte o ar na hora da força e puxe o ar na volta.");
@@ -1569,17 +1596,21 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
             <div><span className="lbl">{/s|lado|min/.test(String(e.r)) ? "Tempo" : "Reps"}</span><b>{e.r}</b></div>
             <div><span className="lbl">Descanso</span><b>{e.rest ? `${e.rest}s` : "—"}</b></div>
           </div>
-          {e.load && <div className="tag" style={{ fontSize: 12 }}>Personal: {e.load}</div>}
+          {e.load && <div className="tag" style={{ fontSize: 12 }}>Referência: {e.load}</div>}
           <a className="btn" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(e.n.replace(/\(.*?\)/g, "") + " execução correta")}`} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Ver vídeo de como fazer</a>
           <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
             <span className="tag">Carga:</span>
             <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => setLoad(e, ev.target.value)} style={{ width: 80 }} aria-label="Carga usada" />
-            <span className="tag" style={{ fontSize: 12 }}>{last ? <>última: {String(last[1]).replace(".", ",")} kg · <b>hoje: {String(nextLoad(settings.supplies?._loadHist?.[e.n])).replace(".", ",")} kg</b></> : "1ª vez: comece leve, sobrando 2 reps"}</span>
+            <span className="tag" style={{ fontSize: 12 }}>{last ? <>última: {String(last[1]).replace(".", ",")} kg · <b>hoje: {String(nextLoad(settings.supplies?._loadHist?.[e.n], settings.supplies?._exHist?.[e.n], parseInt(String(e.r)))).replace(".", ",")} kg</b></> : "1ª vez: comece leve, sobrando 2 reps"}</span>
           </div>
+          {!ok && !/min/.test(String(e.r)) && <div className="row" style={{ alignItems: "center" }}><span className="tag">Repetições feitas:</span>
+            <input inputMode="numeric" placeholder={String(parseInt(String(e.r)) || "")} value={repIn} onChange={(ev) => setRepIn(ev.target.value)} style={{ width: 70 }} aria-label="Repetições" />
+            <span className="tag" style={{ fontSize: 12 }}>vazio = {String(parseInt(String(e.r)) || e.r)}</span></div>}
           <div className="dots" style={{ margin: "10px 0" }}>{Array.from({ length: e.s }, (_, k) => <i key={k} className={k < n ? "on" : ""} />)}</div>
+          {(setlog[key(ix)] || []).length > 0 && <div className="tag" style={{ fontSize: 12 }}>Feito: {(setlog[key(ix)] || []).map((y, k) => `${k + 1}ª ${y.r}${y.kg ? `×${String(y.kg).replace(".", ",")} kg` : ""}`).join(" · ")}</div>}
           {!ok ? <button className="ok big" onClick={() => doSet(ix, e)}>Série {n + 1} de {e.s} feita</button>
             : ix < w.ex.length - 1 ? <button className="pri big" onClick={() => { buzz(); setIx(ix + 1); }}>Próximo exercício →</button>
-            : <button className="ok big" onClick={onDone}><Icon n="check" /> Terminei o treino</button>}
+            : <button className="ok big" onClick={finishW}><Icon n="check" /> Terminei o treino</button>}
           <div className="tag" style={{ fontSize: 12 }}>Subir carga: se fez todas as reps com folga, na próxima vez coloque +1–2 kg.</div>
         </>}
         <div className="row" style={{ justifyContent: "space-between", marginTop: 8 }}>
@@ -1614,7 +1645,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
           );
         })}
       </div>
-      <button className="ok big" onClick={onDone}><Icon n="check" /> Terminei o treino</button>
+      <button className="ok big" onClick={finishW}><Icon n="check" /> Terminei o treino</button>
       <div className="tag">A carga que você digita fica salva para a próxima vez. Na dúvida sobre um aparelho, peça ao instrutor da academia para ajustar na primeira vez.</div>
     </div>
   );
@@ -1730,9 +1761,9 @@ function WeighReport({ weights, week, day, settings }) {
   let verdict;
   if (bv.k || /Recomposi|gordura|água|músculo/.test(bv.t)) verdict = bv.t;
   else if (dW == null) verdict = "Primeira pesagem do relatório. A partir da próxima, o app compara e orienta.";
-  else if (Math.abs(dW) < 0.5) verdict = adh >= 85 ? `Peso estável (${sg(dW)} kg), dentro da oscilação normal de água. ${dFat != null && dFat < 0 ? "Gordura caiu: você está trocando gordura por massa magra." : "Se ficar estável por 2–3 semanas com adesão alta, leve ao personal para ajustar o plano."}` : `Peso estável (${sg(dW)} kg), mas a adesão foi ${adh}%. Antes de mudar o plano, cumpra o que já está nele.`;
+  else if (Math.abs(dW) < 0.5) verdict = adh >= 85 ? `Peso estável (${sg(dW)} kg), dentro da oscilação normal de água. ${dFat != null && dFat < 0 ? "Gordura caiu: você está trocando gordura por massa magra." : "Se ficar estável por 2–3 semanas com adesão alta, ajuste o treino (mais carga ou cardio)."}` : `Peso estável (${sg(dW)} kg), mas a adesão foi ${adh}%. Antes de mudar o plano, cumpra o que já está nele.`;
   else if (dW < 0) verdict = `Desceu ${f1(-dW)} kg. ${dFat != null ? (dFat <= 0 ? "Gordura também caiu: é perda de gordura." : "A gordura subiu: pode ser água/medição; compare com a cintura e as fotos.") : "Confira a cintura e as fotos para confirmar que é gordura."} ${adh >= 85 ? "Mantenha o que está fazendo." : "Com a adesão baixa, o resultado tende a não se manter: veja os ajustes abaixo."}`;
-  else verdict = adh >= 85 && dMag != null && dMag > 0 ? `Subiu ${f1(dW)} kg com massa magra ${sg(dMag)} kg: parte é ganho muscular. Acompanhe a cintura.` : adh >= 85 ? `Subiu ${f1(dW)} kg com boa adesão. Pode ser água, sal ou intestino. Se repetir na próxima, leve ao personal.` : `Subiu ${f1(dW)} kg e a adesão foi ${adh}%. O ajuste está na rotina: veja os pontos abaixo.`;
+  else verdict = adh >= 85 && dMag != null && dMag > 0 ? `Subiu ${f1(dW)} kg com massa magra ${sg(dMag)} kg: parte é ganho muscular. Acompanhe a cintura.` : adh >= 85 ? `Subiu ${f1(dW)} kg com boa adesão. Pode ser água, sal ou intestino. Se repetir na próxima, revise a dieta.` : `Subiu ${f1(dW)} kg e a adesão foi ${adh}%. O ajuste está na rotina: veja os pontos abaixo.`;
 
   const Row = ({ l, a, b, d, good }) => <tr><td>{l}</td><td className="q">{a}</td><td className="q">{b}</td><td className={"tag num" + (d == null || d === 0 ? "" : (good ? d < 0 : d > 0) ? " okc" : " warn")}>{d == null ? "" : sg(d)}</td></tr>;
   return (
@@ -1749,7 +1780,7 @@ function WeighReport({ weights, week, day, settings }) {
       <div className="lbl">No período ({n} dia{n > 1 ? "s" : ""})</div>
       {ok.length > 0 && <ul className="sugg okl">{ok.map((x) => <li key={x}>{x}</li>)}</ul>}
       {fix.length > 0 && <><div className="lbl warn">O que ajustar</div><ul className="sugg">{fix.map((x) => <li key={x}>{x}</li>)}</ul></>}
-      <div className="tag">Orientação automática a partir dos seus registros. Mudanças no plano (calorias, treino) são com o personal.</div>
+      <div className="tag">Orientação automática a partir dos seus registros. Mudanças grandes na dieta: confirme com um nutricionista.</div>
     </div>
   );
 }
@@ -1778,7 +1809,7 @@ function GoalCard({ weights, week, day }) {
         {rows.map(([l, c, t, e, ok]) => <tr key={l}><td>{l}</td><td className={"q" + (ok ? " okc" : " warn")}>{c}</td><td className="q">{t}</td><td className="q">{e}</td></tr>)}
       </tbody></table> : <div className="tag">Pese-se e meça a cintura para o app calcular seus alvos semanais.</div>}
       {rows.length > 0 && <div className="verdict">{onTrack ? "No ritmo da meta. Mantenha a constância." : "Abaixo do ritmo nesta semana: veja o Relatório da pesagem para saber o que ajustar."}</div>}
-      <div className="tag">Ritmo saudável: ~0,5 kg e ~0,5 cm de cintura por semana, preservando músculo. Mais rápido que isso costuma custar massa magra. Ajustes de calorias e treino são com o personal.</div>
+      <div className="tag">Ritmo saudável: ~0,5 kg e ~0,5 cm de cintura por semana, preservando músculo. Mais rápido que isso costuma custar massa magra. Mudanças grandes nas calorias: confirme com um nutricionista.</div>
     </div>
   );
 }
@@ -2219,7 +2250,11 @@ function ExDetail({ x, onClose, fav, toggleFav, settings }) {
       <div className="lbl">Como fazer</div>
       <ol className="exd-steps" style={{ margin: "6px 0 12px" }}>{[...x.s, ...(x.g !== "Cardio" ? ["Ritmo: 1 segundo fazendo força, 2 segundos voltando.", "Respire: solte o ar na força, puxe na volta."] : [])].map((t, k) => <li key={k}><span>{k + 1}</span>{t}</li>)}</ol>
       {x.erro && <div className="verdict warn" style={{ fontWeight: 500 }}><b>Erro comum:</b> {x.erro}</div>}
-      {best != null && <div className="tag" style={{ margin: "10px 0" }}>Seu recorde: <b>{String(best).replace(".", ",")} kg</b> · última: {String(hist.at(-1)[1]).replace(".", ",")} kg</div>}
+      {best != null && <div className="card" style={{ margin: "10px 0" }}>
+        <div className="mh"><h3>Sua evolução</h3><span className="tag">recorde <b>{String(best).replace(".", ",")} kg</b></span></div>
+        {hist.length > 1 ? <LineChart data={hist.map(([d, v]) => ({ day: d, kg: v }))} unit=" kg" /> : <div className="tag">Faça mais um treino para ver o gráfico.</div>}
+        <div className="tag" style={{ fontSize: 12 }}>{fmtDay(hist[0][0], { day: "2-digit", month: "2-digit" })}: {String(hist[0][1]).replace(".", ",")} kg → hoje: {String(hist.at(-1)[1]).replace(".", ",")} kg{(() => { const eh = settings?.supplies?._exHist?.[x.n]; const l = eh && Object.entries(eh).sort(([a], [b]) => (a < b ? -1 : 1)).at(-1); return l ? ` · última sessão: ${l[1].map((y) => `${y.r}×${String(y.kg).replace(".", ",")}`).join(", ")}` : ""; })()}</div>
+      </div>}
       <div className="tag" style={{ fontSize: 12, margin: "10px 0" }}>Carga: comece leve, sobrando 2 repetições. Fez todas com folga? Na próxima, +1–2 kg.</div>
       <a className="btn" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(x.n.replace(/\(.*?\)/g, "") + " execução correta")}`} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Ver vídeo de como fazer</a>
     </div>
@@ -2326,7 +2361,7 @@ function WorkoutEditor({ settings, saveSettings, week, onClose }) {
           {open === wi && <>
             <input className="exsearch" value={w.name} onChange={(e) => upd(wi, (x) => ({ ...x, name: e.target.value }))} aria-label="Nome do treino" />
             {w.ex.map((e, ei) => {
-              const nl = nextLoad(hist[e.n]);
+              const nl = nextLoad(hist[e.n], settings.supplies?._exHist?.[e.n], parseInt(String(e.r)));
               return (
                 <div key={ei} className="ed-row">
                   <img src={`/ex/${e.img}.jpg`} alt="" />
@@ -2353,7 +2388,7 @@ function WorkoutEditor({ settings, saveSettings, week, onClose }) {
         </div>
       ))}
       {ws.length < 7 && <button className="more-btn" onClick={() => { save([...ws, { name: "Novo treino", ex: [] }]); setOpen(ws.length); }}>+ Novo treino</button>}
-      {settings.supplies?._workouts?.length > 0 && <button className="link" onClick={() => ask("reset", () => saveSettings({ supplies: { ...settings.supplies, _workouts: null }, times: { ...(settings.times || {}), divs: 5 } }))}>{conf === "reset" ? "Toque de novo para voltar ao treino do personal" : "Voltar ao treino do personal"}</button>}
+      {settings.supplies?._workouts?.length > 0 && <button className="link" onClick={() => ask("reset", () => saveSettings({ supplies: { ...settings.supplies, _workouts: null }, times: { ...(settings.times || {}), divs: 5 } }))}>{conf === "reset" ? "Toque de novo para voltar ao treino original" : "Voltar ao treino original"}</button>}
       <div className="tag" style={{ fontSize: 12, marginTop: 8 }}>Tudo é salvo na hora. A ordem dos treinos (A, B, C...) segue a lista.</div>
       {pick != null && <ExPicker onClose={() => setPick(null)} onPick={(x) => { upd(pick, (w) => { const fin = w.ex.findIndex((e) => e.fin); const it = fromLib(x); if (fin >= 0 && !it.fin) w.ex.splice(fin, 0, it); else w.ex.push(it); return w; }); setPick(null); }} />}
     </>
