@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TrainingLogin, SetPassword } from "./auth";
 import { supabase, fmtDay } from "@/lib/supabase";
 import { compress } from "@/lib/photos";
 import { useRestTimer } from "@/lib/use-rest-timer";
@@ -8,7 +9,8 @@ import { QUESTIONS, DAYS, GOALS, CATALOG, validateAnswer, screening } from "@/li
 const messages = {
   config: "Esta área ainda precisa ser ativada na hospedagem.",
   database: "Não consegui acessar o banco de treino. Confira se a atualização foi aplicada.",
-  invitation: "Esta conta ainda não tem convite ativo. Peça acesso a quem convidou você.",
+  invitation: "Seu acesso está pausado ou ainda não foi liberado. Fale com o responsável.",
+  email_confirmation: "Confirme seu e-mail antes de continuar. Confira sua caixa de entrada e o spam.",
   auth: "Entre novamente para continuar.",
   owner: "Só o responsável pode gerenciar convites.",
   unavailable: "Não consegui concluir agora. Tente novamente."
@@ -48,61 +50,24 @@ const date = d => new Date(d).toLocaleDateString("pt-BR", {
 });
 export default function TrainingApp() {
   const [session, setSession] = useState(),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [recovering, setRecovering] = useState(false);
   useEffect(() => {
+    if (new URLSearchParams(location.search).get("redefinir") === "1" || new URLSearchParams(location.hash.slice(1)).get("type") === "recovery") setRecovering(true);
     supabase.auth.getSession().then(({
       data
     }) => setSession(data.session)).catch(() => setError("Não consegui iniciar sua sessão."));
     const {
       data
-    } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    } = supabase.auth.onAuthStateChange((event, s) => { setSession(s); if (event === "PASSWORD_RECOVERY") setRecovering(true); });
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
     return () => data.subscription.unsubscribe();
   }, []);
   if (error) return <main className="training"><p role="alert">{error}</p><button onClick={() => location.reload()}>Tentar novamente</button></main>;
   if (session === undefined) return <main className="training"><p role="status">Abrindo seu espaço…</p></main>;
-  if (!session) return <TrainingLogin />;
-  if (session.user.user_metadata?.training_pilot && !session.user.user_metadata?.training_password_set) return <SetPassword />;
+  if (!session) return <TrainingLogin brand={<Brand />} />;
+  if (recovering || (session.user.user_metadata?.training_pilot && !session.user.user_metadata?.training_password_set)) return <SetPassword brand={<Brand />} onDone={() => setRecovering(false)} />;
   return <TrainingSpace key={session.user.id} uid={session.user.id} />;
-}
-function TrainingLogin() {
-  const [email, setEmail] = useState(""),
-    [password, setPassword] = useState(""),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  async function login(e) {
-    e.preventDefault();
-    setBusy(true);
-    const {
-      error
-    } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    setError(error ? "Confira seu e-mail e sua senha." : "");
-    setBusy(false);
-  }
-  return <main className="training"><Brand /><div className="tr-hero"><span className="tr-eyebrow">SEU RITMO. SEU TREINO.</span><h1>Um plano que<br />cabe na sua vida.</h1><p>Conte de onde você está começando. Construa uma rotina e ajuste com a sua evolução.</p></div><form className="tr-card" onSubmit={login}><h2>Entre no seu espaço</h2><p>Acesso por convite, para adultos.</p><label>E-mail<input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><label>Senha<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>{error && <p role="alert">{error}</p>}<button className="tr-primary" disabled={busy}>{busy ? "Entrando…" : "Entrar"}</button><p className="tr-small">Primeiro acesso? Abra o link pessoal que você recebeu para criar sua senha.</p></form></main>;
-}
-function SetPassword() {
-  const [value, setValue] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  async function save(e) {
-    e.preventDefault();
-    setBusy(true);
-    const {
-      error
-    } = await supabase.auth.updateUser({
-      password: value,
-      data: {
-        training_password_set: true
-      }
-    });
-    setError(error ? "Não consegui salvar a senha. Use pelo menos 12 caracteres e tente novamente." : "");
-    setBusy(false);
-  }
-  return <main className="training"><Brand /><form className="tr-card" onSubmit={save}><h1>Bem-vindo ao seu treino.</h1><p>Crie sua senha para voltar quando quiser.</p><label>Nova senha<input type="password" minLength={12} autoComplete="new-password" required value={value} onChange={e => setValue(e.target.value)} /></label>{error && <p role="alert">{error}</p>}<button className="tr-primary" disabled={busy}>Salvar minha senha</button></form></main>;
 }
 function Brand() {
   return <header className="tr-brand"><span className="tr-mark">↗</span><span>PROTOCOLO<span className="tr-small">TREINO PESSOAL</span></span><span className="tr-beta">PILOTO</span></header>;
@@ -236,7 +201,7 @@ function TrainingSpace({
  {tab === "progress" && <><div className="tr-hero"><span className="tr-eyebrow">CONSISTÊNCIA, UM DIA POR VEZ</span><h1>Seu caminho<br />até aqui.</h1></div><div className="tr-metrics"><span><b>{allSessions.length}</b>sessões registradas</span><span><b>{allSessions[0]?.feedback?.effort || "—"}</b>último esforço /10</span></div>{!allSessions.length && <p>Seu primeiro registro aparece aqui depois do treino.</p>}{allSessions.map(s => <article className="tr-card" key={s.id}><div className="tr-row"><b>{date(s.completed_at || s.completedAt || s.created_at)}</b><span className="tr-tag">{pending.some(x => x.id === s.id) ? "No celular" : "Sincronizado"}</span></div><p>{s.sets.length} séries · esforço {s.feedback.effort}/10 · {s.feedback.pain ? "Dor relatada — avaliação necessária" : "Sem dor relatada"}</p></article>)}{profile && <PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} />}</>}
  {tab === "account" && <><h1>Seu espaço.</h1><section className="tr-card"><h2>Seu perfil</h2><p>{profile ? `${profile.name} · ${profile.age} anos` : "Seu perfil ainda não foi preenchido."}</p><button onClick={() => setMode("wizard")}>Revisar perguntas e preferências</button><p className="tr-small">Ao salvar novas respostas, a proposta anterior fica desatualizada. Suas sessões anteriores continuam no histórico.</p></section><section className="tr-card"><h2>Privacidade e limites</h2><p>A foto é opcional, privada dentro do aplicativo e não é enviada à IA. Não estimamos gordura nem diagnosticamos condições pela imagem.</p><p>O responsável técnico pelo banco pode administrar os arquivos. Evite mostrar o rosto ou outras pessoas.</p><p>O plano é uma proposta inicial de treino, não uma avaliação presencial. Técnica, sintomas e recuperação importam mais que uma meta de carga.</p><p className="tr-small">Você pode excluir fotos na área Evolução. Respostas e registros ficam na sua conta.</p></section><button onClick={() => supabase.auth.signOut()}>Sair da conta</button>{data.isOwner && <a className="tr-link" href="/">Voltar ao meu aplicativo pessoal</a>}</>}
  {tab === "invites" && data.isOwner && <Invites />}
- <nav className="tr-nav">{[["plan", "Treino"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Convites"]] : [])].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => {
+ <nav className="tr-nav">{[["plan", "Treino"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Clientes"]] : [])].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => {
         setTab(key);
         window.scrollTo(0, 0);
       }}>{label}</button>)}</nav>
@@ -530,7 +495,7 @@ function Invites() {
       setBusy(false);
     }
   }
-  return <><div className="tr-hero"><span className="tr-eyebrow">UM AMIGO POR VEZ</span><h1>Convide para<br />começar.</h1><p>Cada pessoa tem sua conta, suas respostas e seu histórico. Você gerencia o acesso, sem ver fotos ou respostas de saúde nesta tela.</p></div><form className="tr-card" onSubmit={create}><label>E-mail do amigo adulto<input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><button className="tr-primary" disabled={busy}>{busy ? "Gerando…" : "Gerar link de convite"}</button><p className="tr-small">Nenhum e-mail é enviado automaticamente. O link é pessoal: compartilhe apenas com a pessoa indicada.</p></form>{error && <p role="alert">{error}</p>}{link && <section className="tr-card"><h2>Convite pronto</h2><p>Este link dá acesso à conta convidada. Não publique em grupos.</p><button onClick={() => navigator.clipboard.writeText(link).then(() => setError("Link copiado. Envie ao seu amigo em uma conversa privada.")).catch(() => setError("Não consegui copiar. Tente novamente."))}>Copiar link pessoal</button></section>}{members.map(m => <article className="tr-card" key={m.user_id}><b>{m.email}</b><p>{m.status === "active" ? "Acesso ativo" : "Acesso pausado"}</p><button onClick={async () => {
+  return <><div className="tr-hero"><span className="tr-eyebrow">SEUS CLIENTES, UM SÓ ENDEREÇO</span><h1>Seu link de<br />cadastro.</h1><p>Cada pessoa tem sua conta, suas respostas e seu histórico. Você gerencia o acesso, sem ver fotos ou respostas de saúde nesta tela.</p></div><section className="tr-card"><h2>Compartilhe este link fixo</h2><p>A pessoa cria a própria conta e senha e começa o questionário. Você não precisa gerar um convite para cada acesso.</p><button onClick={() => navigator.clipboard.writeText(`${location.origin}/treino?cadastro=1`).then(() => setError("Link de cadastro copiado.")).catch(() => setError("Não consegui copiar. Use o endereço da página com ?cadastro=1."))}>Copiar link de cadastro</button></section><details className="tr-card"><summary>Convite individual (opcional)</summary><form className="tr-card" onSubmit={create}><label>E-mail do amigo adulto<input type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label><button className="tr-primary" disabled={busy}>{busy ? "Gerando…" : "Gerar link de convite"}</button><p className="tr-small">Nenhum e-mail é enviado automaticamente. O link é pessoal: compartilhe apenas com a pessoa indicada.</p></form></details>{error && <p role="alert">{error}</p>}{link && <section className="tr-card"><h2>Convite pronto</h2><p>Este link dá acesso à conta convidada. Não publique em grupos.</p><button onClick={() => navigator.clipboard.writeText(link).then(() => setError("Link copiado. Envie ao seu amigo em uma conversa privada.")).catch(() => setError("Não consegui copiar. Tente novamente."))}>Copiar link pessoal</button></section>}{members.map(m => <article className="tr-card" key={m.user_id}><b>{m.email}</b><p>{m.status === "active" ? "Acesso ativo" : "Acesso pausado"}</p><button onClick={async () => {
         try {
           await request("/invites", {
             userId: m.user_id,

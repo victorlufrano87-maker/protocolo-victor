@@ -1,10 +1,12 @@
-# Piloto de treino personalizado por convite
+# Piloto de treino personalizado
+
+**Atualização:** o cadastro agora também funciona por link fixo, sem convites individuais. Consulte [CADASTRO-DIRETO.md](./CADASTRO-DIRETO.md). As instruções de cadastro direto substituem o fluxo restrito por convite.
 
 Uma área nova em **/treino**, dentro do mesmo projeto. O aplicativo pessoal do Victor continua separado. Convidados entram em uma conta própria, sem receber a dieta, os suplementos ou os registros do Victor.
 
 ## O que a pessoa faz
 
-1. Abre um convite pessoal e define sua senha.
+1. Abre o link fixo de cadastro e escolhe a própria senha. Se recebeu um convite individual anteriormente, também pode usá-lo ou recuperar a senha.
 2. Concorda com o uso das respostas e responde a 25 perguntas, uma por tela: idade adulta, objetivo, prioridades, experiência, interrupção do treino, atividade atual, sinais e limitações de saúde, local, equipamentos disponíveis, dias, duração, movimento diário, sono, estresse, preferências e apoio profissional. Peso é opcional.
 3. Confere e salva as respostas. Sinais que pedem avaliação interrompem a proposta automática; não há um botão de “liberação médica” baseado em autodeclaração.
 4. Pode enviar uma foto privada com consentimento específico ou pular. A foto não é enviada ao provedor de IA e não é usada para estimar gordura, diagnosticar postura ou escolher exercícios.
@@ -18,9 +20,9 @@ Uma área nova em **/treino**, dentro do mesmo projeto. O aplicativo pessoal do 
 2. A migração **20261103_reliability.sql** já foi executada pelo proprietário. Execute também **supabase/migrations/20261103_training_pilot.sql** no SQL Editor do mesmo projeto. Ela adiciona tabelas e um bucket privado, sem apagar os dados pessoais existentes. É reaplicável.
 3. Confira as variáveis **APP_OWNER_ID**, **SUPABASE_SERVICE_ROLE_KEY**, **NEXT_PUBLIC_SUPABASE_URL**, **NEXT_PUBLIC_SUPABASE_ANON_KEY** e **ANTHROPIC_API_KEY** em Production e na prévia da branch. Não é necessária outra chave de IA. **TRAINING_AI_DAILY_LIMIT** é opcional, com padrão de 10 chamadas por conta/dia e até 6/minuto. Ela usa o contador central de IA já existente; a cota não é uma garantia monetária de custo.
 4. No Supabase, **Authentication → URL Configuration**, confira a Site URL de produção e acrescente a URL exata **https://protocolo-victor.vercel.app/treino** aos redirecionamentos permitidos. Para testar links de convite na prévia, acrescente também a URL exata da prévia seguida de /treino. Não libere qualquer domínio com um curinga irrestrito.
-5. Mantenha o cadastro público desligado. A geração de convites usa a administração do Supabase no servidor. **Gerar link não envia e-mail nem mensagem**. O responsável copia o link e decide com quem compartilhar; ele autoriza o acesso àquela conta e deve ser tratado como confidencial.
+5. Para o cadastro direto, ligue **Allow new users to sign up** no Supabase e salve. A pessoa escolhe sua senha e entra na área de treino após autenticação. Convites individuais são opcionais; a geração deles não envia mensagem automaticamente.
 6. Republique primeiro a prévia e entre como proprietário em **/treino**. Teste o questionário e o registro de uma sessão antes de mesclar o PR. O link “Treino personalizado e convites” também aparece no aplicativo pessoal.
-7. Depois de publicar a versão revisada, abra **/treino → Convites**, informe o e-mail de um amigo adulto e clique em **Gerar link de convite**. Copie o link e compartilhe de forma privada. Para um e-mail já cadastrado, é gerado um link de acesso à mesma conta. Confirme que a URL leva à versão certa antes de convidar alguém.
+7. Depois de publicar, compartilhe **https://protocolo-victor.vercel.app/treino?cadastro=1**. A aba **Clientes** permite copiar o link fixo e gerenciar acessos; nela também há um convite individual opcional.
 
 ## Uso e privacidade
 
