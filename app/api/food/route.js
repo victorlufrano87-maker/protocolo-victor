@@ -31,7 +31,7 @@ export async function POST(req) {
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
       model: process.env.FOOD_MODEL || "claude-sonnet-5-5",
-      max_tokens: 800,
+      max_tokens: 2500,
       messages: [{ role: "user", content: [
         ...imgs.map((data) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } })),
         { type: "text", text: mode === "scale" ? SCALE : PROMPT + (note ? `\nDica do usuário: ${String(note).slice(0, 200)}` : "") },
@@ -40,7 +40,7 @@ export async function POST(req) {
   });
   if (!r.ok) return Response.json({ error: "api", detail: (await r.text()).slice(0, 300) }, { status: 502 });
   const j = await r.json();
-  const txt = (j.content || []).map((c) => c.text || "").join("");
+  const txt = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("");
   try {
     const out = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
     if (mode === "scale") return Response.json(Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== 0)));

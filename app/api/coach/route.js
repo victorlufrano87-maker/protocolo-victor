@@ -28,10 +28,12 @@ export async function POST(req) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.COACH_MODEL || "claude-sonnet-5-5", max_tokens: 500, system: SYS,
+    body: JSON.stringify({ model: process.env.COACH_MODEL || "claude-sonnet-5-5", max_tokens: 2000, system: SYS,
       messages: [{ role: "user", content: `Dados (JSON):\n${JSON.stringify(ctx).slice(0, 12000)}\n\n${ask}` }] }),
   });
   if (!r.ok) return Response.json({ error: "api", detail: (await r.text()).slice(0, 300) }, { status: 502 });
   const j = await r.json();
-  return Response.json({ text: (j.content || []).map((c) => c.text || "").join("").trim() });
+  const text = (j.content || []).filter((c) => c.type === "text").map((c) => c.text || "").join("").trim();
+  if (!text) return Response.json({ error: "empty", detail: JSON.stringify(j).slice(0, 300) }, { status: 502 });
+  return Response.json({ text });
 }

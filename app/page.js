@@ -2797,7 +2797,7 @@ function CoachCard({ week, day, settings, log, saveLog, uid }) {
     try {
       const { data } = await supabase.auth.getSession();
       const r = await fetch("/api/coach", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ ctx: coachCtx({ week, day, settings, weights }), question }) });
-      const j = await r.json(); if (!r.ok) throw new Error(j.error === "nokey" ? "Falta a chave da IA na Vercel." : "Não consegui falar com o coach agora.");
+      const j = await r.json(); if (!r.ok) throw new Error(j.error === "nokey" ? "Falta a chave da IA na Vercel." : `Não consegui falar com o coach agora (${j.error || r.status}${j.detail ? ": " + j.detail.slice(0, 120) : ""}).`);
       if (question) setAns(j.text); else saveLog({ checks: { _coach: { text: j.text, at: new Date().toISOString() } } });
       buzz(30);
     } catch (e) { setErr(e.message); }
@@ -2805,8 +2805,8 @@ function CoachCard({ week, day, settings, log, saveLog, uid }) {
   }
   return (
     <section className="card now">
-      <div className="mh"><span className="lbl now-lbl">🧠 Seu coach hoje</span>{saved && <button className="sm" disabled={busy} onClick={() => call()}>{busy ? "..." : "Atualizar"}</button>}</div>
-      {saved ? <div className="coach-txt">{saved.text}</div>
+      <div className="mh"><span className="lbl now-lbl">🧠 Seu coach hoje</span>{saved?.text && <button className="sm" disabled={busy} onClick={() => call()}>{busy ? "..." : "Atualizar"}</button>}</div>
+      {saved?.text ? <div className="coach-txt">{saved.text}</div>
         : <button className="pri big" disabled={busy || !weights} onClick={() => call()}>{busy ? "Lendo seus dados..." : "Gerar meu plano de hoje"}</button>}
       <div className="row" style={{ marginTop: 8 }}>
         <input className="exsearch" style={{ margin: 0 }} placeholder="Pergunte: ex. posso comer pizza hoje?" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q.trim() && call(q)} />
