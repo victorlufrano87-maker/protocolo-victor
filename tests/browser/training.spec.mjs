@@ -205,6 +205,14 @@ test("library search, illustrated explanation, weekly map and per-set targets wo
   await expect(page.getByRole('heading', { name: 'Como fazer' })).toBeVisible();
   await expect(page.locator('.tr-library .exanim img').first()).toBeVisible();
   await expect(page.locator('.tr-library .bodymap')).toBeVisible();
+  await page.getByRole('button', { name: '← Voltar à busca', exact: true }).click();
+  await page.getByRole('searchbox').fill('');
+  await page.getByRole('button', { name: 'Costas', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Qual parte?', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'largura', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'largura', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.tr-library-grid button').first()).toBeVisible();
+  await page.screenshot({ path: 'test-results/training-muscle-picker.png', fullPage: true });
   await page.getByRole('button', { name: 'Treino', exact: true }).click();
   await page.getByRole('button', { name: 'Começar este treino', exact: true }).first().click();
   await expect(page.locator('.tr-prescription')).toContainText('8–12 repetições');
@@ -215,6 +223,24 @@ test("library search, illustrated explanation, weekly map and per-set targets wo
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/training-new-exercise.png', fullPage: true });
+});
+
+test('existing client can upgrade an old plan and see their actual split and rationale', async ({ page }) => {
+  const answers = { ...healthy, experience: 'regular', break: 'none', place: 'gym', equipment: ['machines','cables','dumbbells','bench'], days: ['mon','tue','thu','fri'], minutes: 60 };
+  const profile = { user_id: uid, answers, updated_at: new Date().toISOString() };
+  const plan = { id: '33333333-3333-4333-8333-333333333333', profile_version: profile.updated_at, created_at: profile.updated_at, plan: { ...buildPlan(answers), generatorVersion: undefined } };
+  const { state, errors } = await setup(page, { profile, plan });
+  await expect(page.getByRole('heading', { name: 'Seu plano usa a versão anterior.', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Atualizar meu treino', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Seu plano usa a versão anterior.', exact: true })).toHaveCount(0);
+  expect(state.plan.plan.division).toBe('upper_lower');
+  await expect(page.getByRole('heading', { name: /Treino A · Superiores/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Treino B · Inferiores/ })).toBeVisible();
+  await page.getByText('Por que este treino foi escolhido para mim?', { exact: true }).click();
+  await expect(page.getByText(/Quatro sessões divididas entre superiores e inferiores/)).toBeVisible();
+  await page.getByRole('button', { name: 'Explorar exercícios por músculo →', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Grupos musculares', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test("health concern pauses automatic generation after the questionnaire", async ({
