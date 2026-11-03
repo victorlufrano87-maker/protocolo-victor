@@ -295,3 +295,6 @@ nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
 .done-hero{text-align:center;padding:18px 0 10px}.done-hero h2{margin:6px 0 2px}
 .gym .ok.big{min-height:64px;font-size:19px}
 .pick-row .sm{min-height:0;padding:6px 12px;font-size:12px}.pick-row{min-height:64px}
+
+.hrow{display:grid;grid-template-columns:72px 1fr 48px;align-items:center;gap:8px;margin:6px 0;font-size:13px}.hrow b{text-align:right}
+.prevbox{display:flex;flex-direction:column;gap:2px;background:var(--card2);border-radius:10px;padding:8px 10px;margin:8px 0}

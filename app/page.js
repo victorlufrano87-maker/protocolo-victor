@@ -430,6 +430,7 @@ function Today({ uid, log, saveLog, settings, saveSettings, week, day, now, setS
           onWhey={(m) => { const c = { _whey: { ...(checks._whey || {}), [m.id]: true } }; m.items.forEach((it, i) => { if (!it.sup) c[`${m.id}-${i}`] = true; }); saveLog({ checks: c }); say("Registrado: só whey"); }}
           onSnooze={(m) => { const at = Math.max(now, toMin(tOf(m))) + 15; saveLog({ checks: { _snooze: { ...(checks._snooze || {}), [m.id]: at } } }); say(`Te lembro às ${fmtHM(at)}`); }} />
         : <div className="card complete"><h2>Dieta do dia completa</h2><div className="tag">Todas as refeições marcadas. Confira água e suplementos abaixo.</div></div>}
+      <FoodPhoto checks={checks} saveLog={saveLog} say={say} mealName={focus?.name} />
       <section className="card quick">
         <button onClick={() => { buzz(); saveLog({ water_ml: log.water_ml + 250 }); }}><span className="lbl">Água · toque +250</span><b className="num">{(log.water_ml / 1000).toFixed(1).replace(".", ",")}/2,6 L</b></button>
         <button onClick={() => setMore(true)}><span className="lbl">Suplementos</span><b className="num">{sups.filter((x) => checks[x.k]).length}/{sups.length}</b></button>
@@ -854,6 +855,7 @@ Feedback: ${feedback || "—"}`;
     <>
       <MeuCorpo weights={weights} week={week} day={day} settings={settings} />
       <ProjetoVirada week={week} day={day} settings={settings} />
+      <Expenditure weights={weights} week={week} day={day} />
       <CardioHist week={week} day={day} />
       <WeighReport weights={weights} week={week} day={day} settings={settings} />
 
@@ -1635,6 +1637,9 @@ function Gym({ w: w0, checks, saveLog, settings, saveSettings, onClose, onDone }
             <input inputMode="decimal" placeholder="kg" value={loads[e.n] ?? ""} onChange={(ev) => setLoad(e, ev.target.value)} style={{ width: 80 }} aria-label="Carga usada" />
             <span className="tag" style={{ fontSize: 12 }}>{last ? <>última: {String(last[1]).replace(".", ",")} kg · <b>hoje: {String(nextLoad(settings.supplies?._loadHist?.[e.n], settings.supplies?._exHist?.[e.n], parseInt(String(e.r)))).replace(".", ",")} kg</b></> : "1ª vez: comece leve, sobrando 2 reps"}</span>
           </div>
+          {(() => { const ps = Object.entries(settings.supplies?._exHist?.[e.n] || {}).filter(([d]) => d < spNow().day).sort(([a2], [b2]) => (a2 < b2 ? -1 : 1)).at(-1); if (!ps) return null;
+            const rm = Math.max(...ps[1].map((y) => (y.kg || 0) * (1 + (y.r || 0) / 30)));
+            return <div className="prevbox"><span className="lbl">Anterior ({fmtDay(ps[0], { day: "2-digit", month: "2-digit" })})</span><b className="num">{ps[1].map((y) => `${y.r}×${String(y.kg).replace(".", ",")}`).join(" · ")}</b>{rm > 0 && <span className="tag">1RM estimado: {Math.round(rm)} kg</span>}</div>; })()}
           {!ok && !/min/.test(String(e.r)) && <div className="row" style={{ alignItems: "center" }}><span className="tag">Repetições feitas:</span>
             <input inputMode="numeric" placeholder={String(parseInt(String(e.r)) || "")} value={repIn} onChange={(ev) => setRepIn(ev.target.value)} style={{ width: 70 }} aria-label="Repetições" />
             <span className="tag" style={{ fontSize: 12 }}>vazio = {String(parseInt(String(e.r)) || e.r)}</span></div>}
@@ -1706,6 +1711,7 @@ function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
   const doneWeek = {};
   weekDays.forEach((d) => { const l = week[d]; if (l?.workout_at) doneWeek[l.checks?._wk || "?"] = d; });
   const nDone = weekDays.filter((d) => week[d]?.workout_at).length;
+  const heatCard = <WeekMuscles settings={settings} day={day} />;
   if (edit) return <WorkoutEditor settings={settings} saveSettings={saveSettings} week={week} onClose={() => setEdit(false)} />;
   return (
     <>
@@ -1715,6 +1721,7 @@ function TrainTab({ log, saveLog, settings, saveSettings, week, day }) {
         <div className="tag">{WS[nextIdx].ex.length} exercícios · pré-treino 30 min antes · siga a ordem A→E, não o dia da semana</div>
         <button className="pri big" onClick={() => setGym(WS[nextIdx])}><Icon n="dumbbell" s={18} /> {done ? "Ver próximo treino" : "Começar treino"}</button>
       </section>
+      {heatCard}
       <div className="card">
         <div className="mh"><h3>Esta semana</h3><span className="tag num">{nDone} treino{nDone === 1 ? "" : "s"}</span></div>
         <div className="week">
@@ -2230,9 +2237,10 @@ const MUSCLE_PARTS = {
   "trapézio": ["traps"], "pescoço": ["traps"], "lombar": ["low"], "glúteos": ["gluL", "gluR"], "abdutores": ["gluL", "gluR"], "adutores": ["addL", "addR"],
   "quadríceps": ["quadL", "quadR"], "posterior de coxa": ["hamL", "hamR"], "panturrilha": ["calfL", "calfR", "shinL", "shinR"],
 };
-function BodyMap({ pm = [], sm = [] }) {
+function BodyMap({ pm = [], sm = [], heat = null }) {
   const lvl = {}; sm.forEach((m) => (MUSCLE_PARTS[m] || []).forEach((p) => { lvl[p] = 1; })); pm.forEach((m) => (MUSCLE_PARTS[m] || []).forEach((p) => { lvl[p] = 2; }));
-  const fill = (k) => (lvl[k] === 2 ? "#e53935" : lvl[k] === 1 ? "#f4a3a1" : "#e8e9ee");
+  const mix = (t) => { const a = [232, 233, 238], b = [229, 57, 53]; return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * Math.min(1, t))).join(",")})`; };
+  const fill = (k) => (heat ? (heat[k] ? mix(heat[k]) : "#e8e9ee") : lvl[k] === 2 ? "#e53935" : lvl[k] === 1 ? "#f4a3a1" : "#e8e9ee");
   return (
     <svg viewBox="0 0 200 200" className="bodymap" role="img" aria-label={`Músculos: ${pm.join(", ")}`}>
       <g fill="#d9dbe2">
@@ -2496,5 +2504,122 @@ function SwapEx({ e, onClose, onToday, onAlways }) {
       ))}
       {!alts.length && <div className="tag">Sem alternativa cadastrada para este exercício.</div>}
     </div></div>
+  );
+}
+
+/* ---------- FOTO DO PRATO ---------- */
+const KCAL_GOAL = 2239, PTN_GOAL = 199;
+async function shrink(file, max = 1024) {
+  const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = URL.createObjectURL(file); });
+  const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");
+  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.8);
+}
+function FoodPhoto({ checks, saveLog, say, mealName }) {
+  const [st, setSt] = useState(null), [res, setRes] = useState(null), [prev, setPrev] = useState(null), [note, setNote] = useState(""), [err, setErr] = useState(null);
+  const foods = checks._foods || [];
+  const day = foods.reduce((a, f) => ({ kcal: a.kcal + (f.total?.kcal || 0), ptn: a.ptn + (f.total?.ptn || 0) }), { kcal: 0, ptn: 0 });
+  async function go(file) {
+    setErr(null); setRes(null); setSt("lendo");
+    try {
+      const url = await shrink(file); setPrev(url);
+      const { data } = await supabase.auth.getSession();
+      const r = await fetch("/api/food", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` }, body: JSON.stringify({ image: url.split(",")[1], note }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error === "nokey" ? "Falta configurar a chave da IA na Vercel (ANTHROPIC_API_KEY)." : j.error === "auth" ? "Faça login de novo." : "Não consegui ler a foto. Tente com mais luz e o prato inteiro.");
+      setRes(j); buzz(40);
+    } catch (e) { setErr(e.message); }
+    setSt(null);
+  }
+  const f1 = (v) => Math.round(v);
+  return (
+    <section className="card">
+      <div className="mh"><h3>📸 Foto do prato</h3><span className="tag num">hoje {f1(day.kcal)}/{KCAL_GOAL} kcal · {f1(day.ptn)}/{PTN_GOAL} g PTN</span></div>
+      {!res && <>
+        <input className="exsearch" placeholder="Dica opcional (ex.: 150 g de frango)" value={note} onChange={(e) => setNote(e.target.value)} />
+        <label className="btn pri big" style={{ display: "flex", justifyContent: "center", gap: 8, cursor: "pointer" }}>
+          <Icon n="camera" s={18} /> {st ? "Lendo o prato..." : "Tirar foto do prato"}
+          <input type="file" accept="image/*" capture="environment" hidden disabled={!!st} onChange={(e) => e.target.files?.[0] && go(e.target.files[0])} />
+        </label>
+      </>}
+      {err && <div className="tag warn">{err}</div>}
+      {res && <>
+        {prev && <img src={prev} alt="Seu prato" style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 12, margin: "6px 0" }} />}
+        {res.itens?.length ? <table><tbody>{res.itens.map((i, k) => <tr key={k}><td>{i.nome}</td><td className="q">{f1(i.g)} g</td><td className="q">{f1(i.kcal)} kcal</td><td className="q">{f1(i.ptn)} g PTN</td></tr>)}</tbody></table> : null}
+        <div className="pre-grid">
+          <div><div className="lbl">Calorias</div><b className="num">{res.total.kcal}</b></div>
+          <div><div className="lbl">Proteína</div><b className="num">{res.total.ptn} g</b></div>
+          <div><div className="lbl">Carbo · Gord.</div><b className="num">{res.total.carb} · {res.total.gord} g</b></div>
+        </div>
+        <div className="tag" style={{ fontSize: 12 }}>Estimativa por foto (confiança {res.confianca || "média"}). {res.obs || ""} Pode errar 20–30% nas quantidades.</div>
+        <div className="row">
+          <button className="ok grow" onClick={() => { saveLog({ checks: { _foods: [...foods, { at: new Date().toISOString(), meal: mealName || null, itens: res.itens, total: res.total }] } }); say("Prato registrado"); setRes(null); setPrev(null); setNote(""); }}>Salvar{mealName ? ` no ${mealName.toLowerCase()}` : ""}</button>
+          <button className="sm" onClick={() => { setRes(null); setPrev(null); }}>Descartar</button>
+        </div>
+      </>}
+      {foods.length > 0 && !res && <div className="tag" style={{ fontSize: 12, marginTop: 6 }}>Hoje: {foods.map((f) => `${f.meal || spNowTime(f.at)} ${f.total?.kcal || 0} kcal`).join(" · ")}</div>}
+    </section>
+  );
+}
+
+/* ---------- MÚSCULOS DA SEMANA (mapa de calor) ---------- */
+const HEAT_GROUPS = [["Peito", ["peitoral"], 14], ["Costas", ["dorsal", "meio das costas"], 14], ["Ombros", ["ombros"], 12], ["Bíceps", ["bíceps"], 12], ["Tríceps", ["tríceps"], 12], ["Pernas", ["quadríceps", "posterior de coxa", "glúteos"], 12], ["Abdômen", ["abdômen"], 10]];
+function weekMuscleSets(settings, day) {
+  const mon = addDays(day, -((weekday(day) + 6) % 7)), eh = settings.supplies?._exHist || {}, cnt = {};
+  const metaOf = (n) => { const l = LIBRARY.find((x) => x.n === n); if (l) return l; for (const w of myWorkouts(settings)) { const e = w.ex.find((x) => x.n === n); if (e) return EXMETA[e.img] || null; } return null; };
+  Object.entries(eh).forEach(([n, byDay]) => {
+    const m = metaOf(n); if (!m) return;
+    Object.entries(byDay).forEach(([d, sl]) => { if (d < mon || d > day) return; const k = (sl || []).length;
+      (m.pm || []).forEach((x) => { cnt[x] = (cnt[x] || 0) + k; }); (m.sm || []).forEach((x) => { cnt[x] = (cnt[x] || 0) + k * 0.5; }); });
+  });
+  return cnt;
+}
+function WeekMuscles({ settings, day }) {
+  const cnt = weekMuscleSets(settings, day);
+  const heat = {};
+  Object.entries(MUSCLE_PARTS).forEach(([m, parts]) => { const g = HEAT_GROUPS.find(([, ms]) => ms.includes(m)); const t = (cnt[m] || 0) / (g ? g[2] : 10); parts.forEach((p) => { heat[p] = Math.max(heat[p] || 0, t); }); });
+  const any = Object.values(cnt).some((v) => v > 0);
+  return (
+    <div className="card">
+      <div className="mh"><h3>Músculos da semana</h3><span className="tag">séries feitas / meta</span></div>
+      <div style={{ maxWidth: 300, margin: "0 auto" }}><BodyMap heat={heat} /></div>
+      {HEAT_GROUPS.map(([g, ms, goal]) => { const v = ms.reduce((a, m) => a + (cnt[m] || 0), 0) / (ms.length > 1 && g !== "Pernas" ? 1 : 1); const pct = Math.min(1, v / goal);
+        return <div key={g} className="hrow"><span>{g}</span><i className="gbar"><i style={{ width: `${pct * 100}%`, background: pct >= 1 ? "var(--ok)" : pct >= 0.6 ? "var(--accent)" : "var(--warn)" }} /></i><b className="num">{Math.round(v)}/{goal}</b></div>; })}
+      <div className="tag" style={{ fontSize: 12 }}>{any ? "Mais vermelho = mais trabalhado. Meta para crescer: 12–16 séries por semana em peito, costas e braço." : "Marque as séries no treino (com reps) para o mapa encher."}</div>
+    </div>
+  );
+}
+
+/* ---------- GASTO REAL (adaptativo) ---------- */
+function Expenditure({ weights, week, day }) {
+  const from = addDays(day, -27);
+  const W = (() => { const by = {}; weights.forEach((w) => { if (w.day >= from) by[w.day] = +w.kg; }); return Object.entries(by).sort(([a], [b]) => (a < b ? -1 : 1)); })();
+  const main = MEALS.filter((m) => !m.workout);
+  const intake = [];
+  for (let d = from; d <= day; d = addDays(d, 1)) {
+    const l = week[d]; if (!l) continue;
+    const ft = (l.checks?._foods || []).reduce((a, f) => a + (f.total?.kcal || 0), 0);
+    const tot = main.reduce((a, m) => a + m.items.filter((x) => !x.sup).length, 0);
+    const ok = main.reduce((a, m) => a + m.items.filter((x, i) => !x.sup && itemDone(l, m, i)).length, 0);
+    if (ft > 0) intake.push(ft); else if (ok > 0) intake.push(Math.round(KCAL_GOAL * ok / tot) + (l.workout_at ? 220 : 0));
+  }
+  const f0 = (v) => Math.round(v).toLocaleString("pt-BR");
+  if (W.length < 4 || intake.length < 7 || dnum(W.at(-1)[0]) - dnum(W[0][0]) < 10)
+    return <div className="card"><div className="mh"><h2>Gasto real</h2></div><div className="tag">Preciso de ~2 semanas com 4+ pesagens e as refeições marcadas para calcular quanto você realmente gasta. Faltam {Math.max(0, 4 - W.length)} pesagens e {Math.max(0, 7 - intake.length)} dias marcados.</div></div>;
+  const xs = W.map(([d]) => dnum(d)), ys = W.map(([, v]) => v), mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0); // kg/dia
+  const avgIn = intake.reduce((a, b) => a + b) / intake.length, tdee = avgIn - slope * 7700;
+  const wk = slope * 7, target = Math.round((tdee - 450) / 10) * 10;
+  return (
+    <div className="card">
+      <div className="mh"><h2>Gasto real</h2><span className="tag">últimas 4 semanas</span></div>
+      <div className="pre-grid">
+        <div><div className="lbl">Você gasta</div><b className="num">~{f0(tdee)}</b><span className="tag">kcal/dia</span></div>
+        <div><div className="lbl">Você come</div><b className="num">~{f0(avgIn)}</b><span className="tag">kcal/dia</span></div>
+        <div><div className="lbl">Ritmo</div><b className={"num " + (wk <= -0.2 ? "okc" : wk >= 0.2 ? "warn" : "")}>{wk > 0 ? "+" : ""}{wk.toFixed(2).replace(".", ",")} kg</b><span className="tag">por semana</span></div>
+      </div>
+      <div className="verdict" style={{ marginTop: 8 }}>{wk <= -0.6 ? "Perdendo rápido demais: risco de perder músculo. Considere comer ~150 kcal a mais." : wk <= -0.2 ? "Ritmo bom de perda. Mantenha." : `Para perder ~0,4 kg/semana, o alvo seria ~${f0(target)} kcal/dia (hoje o plano tem ${f0(KCAL_GOAL)}). Antes de cortar, confira se está marcando tudo.`}</div>
+      <div className="tag" style={{ fontSize: 12 }}>Estimativa pela tendência do peso + o que você marcou (fotos do prato contam mais). Água e sal fazem o número oscilar; fica mais preciso com o tempo.</div>
+    </div>
   );
 }
