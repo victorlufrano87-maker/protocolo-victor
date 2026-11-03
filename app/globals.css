@@ -263,3 +263,18 @@ nav button span{font-size:10.5px}
 .quick button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;border-radius:12px;text-align:left;min-height:0}
 .quick button b{font-size:16px}
 .more-btn{width:100%;margin:6px 0 12px;background:transparent;border:1px dashed var(--line);color:var(--mute)}
+
+.exsearch{width:100%;margin:4px 0 4px;padding:12px 14px;border-radius:12px;font-size:16px}
+.exgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.excard{display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:8px;border-radius:14px;text-align:center;min-height:0}
+.excard b{font-size:14px;line-height:1.25;font-weight:600}
+.eximg{position:relative;display:block;background:#fff;border-radius:10px;overflow:hidden;aspect-ratio:4/3}
+.eximg img{width:100%;height:100%;object-fit:cover;display:block}
+.exstar{position:absolute;right:6px;top:4px;font-size:22px;color:#999;text-shadow:0 0 3px #fff}.exstar.on{color:#f5b301}
+.exsheet{padding-bottom:20px}
+.exanim{position:relative;width:100%;aspect-ratio:4/3;border-radius:14px;overflow:hidden;background:#fff}
+.exanim img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .35s;filter:brightness(1.15)}
+.exanim-tag{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:3px 9px;border-radius:999px}
+.bodymap{width:100%;height:auto;background:#fff;border-radius:12px}
+.dotc{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}

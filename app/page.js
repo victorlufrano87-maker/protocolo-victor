@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
 import { WORKOUTS } from "@/lib/workouts";
 import { EXMETA } from "@/lib/exmeta";
+import { LIBRARY, GROUPS_EX, EQUIP } from "@/lib/library";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
 import { MEALS, GROUPS, RULES, SUPPLIES, WATER_GOAL, START_WEIGHT, LETTERS, CAFFEINE, CAFFEINE_MAX, WEEKDAYS, PREWORKOUT, PREP, EAT_OUT, PALM, WEEK_BASIC, stockLeft, effectiveNow, weekday, mealTime, trainTime, itemDone, mealIsDone, dayScore, replaceSuggestion, weekShop, fmtQty } from "@/lib/plan";
@@ -30,6 +31,7 @@ const I = {
   plan: <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7" />,
   check: <path d="m5 12 5 5 9-10" />,
   dumbbell: <path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12" />,
+  search: <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>,
   camera: <path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
   cart: <path d="M3 4h2l2.5 11h11L21 7H6.5M9 20h.01M17 20h.01" />,
   ext: <path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" />,
@@ -249,6 +251,7 @@ function App({ uid }) {
       {tab === "hoje" && <Today {...{ uid, log, saveLog, settings, saveSettings, week, day, now, setSwapFor, say }} />}
       {tab === "prog" && <Progress {...{ uid, week, day, settings, saveLog }} />}
       {tab === "treino" && <TrainTab {...{ log, saveLog, settings, saveSettings, week, day }} />}
+      {tab === "exer" && <ExLibrary {...{ settings, saveSettings }} />}
       {tab === "compras" && <Shopping {...{ settings, saveSettings, say }} />}
       {tab === "plano" && <Plan {...{ uid, settings, saveSettings, today, say }} />}
 
@@ -259,7 +262,7 @@ function App({ uid }) {
       {party && <Confetti />}
 
       <nav>
-        {[["hoje", "Hoje", "today"], ["treino", "Treino", "dumbbell"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
+        {[["hoje", "Hoje", "today"], ["treino", "Treino", "dumbbell"], ["exer", "Exercícios", "search"], ["prog", "Progresso", "prog"], ["compras", "Compras", "cart"], ["plano", "Plano", "plan"]].map(([k, l, ic]) =>
           <button key={k} className={tab === k ? "on" : ""} onClick={() => { setTab(k); scrollTo(0, 0); }}>
             <span className="nav-ic"><Icon n={ic} s={22} />{k === "compras" && shopCount > 0 && <i className="badge">{shopCount}</i>}</span><span>{l}</span></button>)}
       </nav>
@@ -1555,7 +1558,7 @@ function Gym({ w, checks, saveLog, settings, saveSettings, onClose, onDone }) {
             <figure><img src={`/ex/${e.img}_1.jpg`} alt={`${e.n}: posição 2`} onError={(ev) => { ev.currentTarget.parentElement.style.display = "none"; }} /><figcaption>2 · fim</figcaption></figure>
           </div>}
           <div className="exd-mid">
-            {meta && <div className="exd-body"><BodyFig view={meta.pm.some((m) => ["tríceps", "dorsal", "meio das costas", "trapézio", "lombar", "glúteos", "posterior de coxa", "panturrilha"].includes(m)) ? "b" : "f"} pm={meta.pm} sm={meta.sm} /></div>}
+            {meta && <div style={{ width: 120, flex: "none" }}><BodyMap pm={meta.pm} sm={meta.sm} /></div>}
             <ol className="exd-steps">{steps.map((t, k) => <li key={t}><span>{k + 1}</span>{t}</li>)}</ol>
           </div>
           {meta && <div className="tag" style={{ fontSize: 12 }}>Trabalha: <b>{meta.pm.join(", ")}</b>{meta.sm.length ? ` · ajuda: ${meta.sm.join(", ")}` : ""}</div>}
@@ -2116,5 +2119,126 @@ function CardioHist({ week, day }) {
       <table><tbody>{ds.map((d) => { const c = week[d].checks._cardio; return <tr key={d}><td>{fmtDay(d, { day: "2-digit", month: "2-digit" })}</td><td className="q">{c.min} min</td><td className="q">{f(c.km, 2)} km</td><td className="q">{c.km ? f(c.km / (c.min / 60)) + " km/h" : ""}</td></tr>; }).reverse()}</tbody></table>
       <div className="tag" style={{ fontSize: 12 }}>Para evoluir: a cada semana, +2 min de tempo ou +0,2 km/h de velocidade.</div>
     </div>
+  );
+}
+
+/* ---------- MAPA MUSCULAR (frente e costas) ---------- */
+const E = (cx, cy, rx, ry, r = 0) => ({ cx, cy, rx, ry, r });
+const BODY_PARTS = {
+  // frente (x ~50)
+  pecL: { d: "M50 41 C42 39 33 40 29 46 C28 54 32 61 40 62 C45 62 49 59 50 55 Z" }, pecR: { d: "M50 41 C58 39 67 40 71 46 C72 54 68 61 60 62 C55 62 51 59 50 55 Z" },
+  deltFL: { e: E(26, 46, 7, 9, -15) }, deltFR: { e: E(74, 46, 7, 9, 15) },
+  bicL: { e: E(23, 65, 5, 11, -8) }, bicR: { e: E(77, 65, 5, 11, 8) },
+  foreFL: { e: E(19, 90, 4.5, 12, -10) }, foreFR: { e: E(81, 90, 4.5, 12, 10) },
+  abs: { d: "M43 64 H57 Q59 82 57 104 Q50 108 43 104 Q41 82 43 64 Z" },
+  oblL: { e: E(37, 84, 4.5, 13, 5) }, oblR: { e: E(63, 84, 4.5, 13, -5) },
+  quadL: { e: E(40, 134, 8, 22, 4) }, quadR: { e: E(60, 134, 8, 22, -4) },
+  addL: { e: E(46.5, 120, 2.6, 10) }, addR: { e: E(53.5, 120, 2.6, 10) },
+  shinL: { e: E(41, 176, 4.5, 15) }, shinR: { e: E(59, 176, 4.5, 15) },
+  // costas (x ~150)
+  traps: { d: "M150 30 L162 42 L156 66 L150 70 L144 66 L138 42 Z" },
+  deltBL: { e: E(126, 46, 7, 9, -15) }, deltBR: { e: E(174, 46, 7, 9, 15) },
+  latL: { d: "M141 52 C134 56 131 70 135 88 C139 94 144 90 146 84 L147 60 Z" }, latR: { d: "M159 52 C166 56 169 70 165 88 C161 94 156 90 154 84 L153 60 Z" },
+  low: { e: E(150, 96, 8, 7) },
+  triL: { e: E(123, 65, 5, 11, -8) }, triR: { e: E(177, 65, 5, 11, 8) },
+  foreBL: { e: E(119, 90, 4.5, 12, -10) }, foreBR: { e: E(181, 90, 4.5, 12, 10) },
+  gluL: { e: E(142, 114, 8.5, 9) }, gluR: { e: E(158, 114, 8.5, 9) },
+  hamL: { e: E(141, 143, 7, 18, 3) }, hamR: { e: E(159, 143, 7, 18, -3) },
+  calfL: { e: E(141, 176, 5.5, 14) }, calfR: { e: E(159, 176, 5.5, 14) },
+};
+const MUSCLE_PARTS = {
+  "peitoral": ["pecL", "pecR"], "ombros": ["deltFL", "deltFR", "deltBL", "deltBR"], "bíceps": ["bicL", "bicR"], "tríceps": ["triL", "triR"],
+  "antebraço": ["foreFL", "foreFR", "foreBL", "foreBR"], "abdômen": ["abs", "oblL", "oblR"], "dorsal": ["latL", "latR"], "meio das costas": ["traps"],
+  "trapézio": ["traps"], "pescoço": ["traps"], "lombar": ["low"], "glúteos": ["gluL", "gluR"], "abdutores": ["gluL", "gluR"], "adutores": ["addL", "addR"],
+  "quadríceps": ["quadL", "quadR"], "posterior de coxa": ["hamL", "hamR"], "panturrilha": ["calfL", "calfR", "shinL", "shinR"],
+};
+function BodyMap({ pm = [], sm = [] }) {
+  const lvl = {}; sm.forEach((m) => (MUSCLE_PARTS[m] || []).forEach((p) => { lvl[p] = 1; })); pm.forEach((m) => (MUSCLE_PARTS[m] || []).forEach((p) => { lvl[p] = 2; }));
+  const fill = (k) => (lvl[k] === 2 ? "#e53935" : lvl[k] === 1 ? "#f4a3a1" : "#e8e9ee");
+  return (
+    <svg viewBox="0 0 200 200" className="bodymap" role="img" aria-label={`Músculos: ${pm.join(", ")}`}>
+      <g fill="#d9dbe2">
+        {[50, 150].map((x) => <g key={x}><circle cx={x} cy="18" r="10" /><rect x={x - 5} y="26" width="10" height="8" rx="3" />
+          <rect x={x - 22} y="36" width="44" height="74" rx="14" /><rect x={x - 19} y="104" width="38" height="16" rx="8" />
+          <ellipse cx={x - 31} cy="104" rx="3.5" ry="5" /><ellipse cx={x + 31} cy="104" rx="3.5" ry="5" />
+          <ellipse cx={x - 9} cy="194" rx="6" ry="3" /><ellipse cx={x + 9} cy="194" rx="6" ry="3" /></g>)}
+      </g>
+      {Object.entries(BODY_PARTS).map(([k, p]) => p.d
+        ? <path key={k} d={p.d} fill={fill(k)} stroke="#b9bcc6" strokeWidth=".7" />
+        : <ellipse key={k} cx={p.e.cx} cy={p.e.cy} rx={p.e.rx} ry={p.e.ry} transform={`rotate(${p.e.r} ${p.e.cx} ${p.e.cy})`} fill={fill(k)} stroke="#b9bcc6" strokeWidth=".7" />)}
+      <text x="50" y="200" fontSize="7" textAnchor="middle" fill="var(--mute)">frente</text>
+      <text x="150" y="200" fontSize="7" textAnchor="middle" fill="var(--mute)">costas</text>
+    </svg>
+  );
+}
+
+/* ---------- ABA EXERCÍCIOS ---------- */
+function ExAnim({ img, name }) {
+  const [f, setF] = useState(0), [play, setPlay] = useState(true), [has2, setHas2] = useState(true);
+  useEffect(() => { if (!play || !has2) return; const t = setInterval(() => setF((x) => 1 - x), 1100); return () => clearInterval(t); }, [play, has2]);
+  return (
+    <div className="exanim" onClick={() => setPlay(!play)}>
+      <img src={`/ex/${img}.jpg`} alt={`${name}: início`} style={{ opacity: f === 0 ? 1 : 0 }} />
+      {has2 && <img src={`/ex/${img}_1.jpg`} alt={`${name}: fim`} style={{ opacity: f === 1 ? 1 : 0 }} onError={() => { setHas2(false); setF(0); }} />}
+      <span className="exanim-tag">{f === 0 ? "1 · início" : "2 · fim"}{has2 ? (play ? " · toque para pausar" : " · pausado") : ""}</span>
+    </div>
+  );
+}
+function ExDetail({ x, onClose, fav, toggleFav, settings }) {
+  const hist = Object.entries(settings?.supplies?._loadHist?.[x.n] || {}).sort(([a], [b]) => (a < b ? -1 : 1));
+  const best = hist.length ? Math.max(...hist.map(([, v]) => v)) : null;
+  return (
+    <div className="exsheet">
+      <div className="mh"><button className="sm" onClick={onClose}>← Voltar</button><button className="sm" aria-label="Favorito" onClick={toggleFav}>{fav ? "★ Favorito" : "☆ Favoritar"}</button></div>
+      <h2 style={{ margin: "10px 0 4px" }}>{x.n}</h2>
+      <div className="seg" style={{ margin: "0 0 10px" }}><span className="pill">{x.g}</span><span className="pill">{x.eq}</span>{x.mine && <span className="pill">no seu treino {x.mine}</span>}</div>
+      <ExAnim img={x.img} name={x.n} />
+      <div style={{ margin: "12px 0" }}>
+        <div style={{ maxWidth: 300, margin: "0 auto 8px" }}><BodyMap pm={x.pm} sm={x.sm} /></div>
+        <div>
+          <div className="lbl">Onde sentir</div><b style={{ fontSize: 16 }}>{x.foco || x.pm.join(", ")}</b>
+          {x.pm.length > 0 && <div className="tag" style={{ marginTop: 6 }}><span className="dotc" style={{ background: "#e53935" }} /> principal: {x.pm.join(", ")}</div>}
+          {x.sm.length > 0 && <div className="tag"><span className="dotc" style={{ background: "#f4a3a1" }} /> ajuda: {x.sm.join(", ")}</div>}
+        </div>
+      </div>
+      <div className="lbl">Como fazer</div>
+      <ol className="exd-steps" style={{ margin: "6px 0 12px" }}>{[...x.s, ...(x.g !== "Cardio" ? ["Ritmo: 1 segundo fazendo força, 2 segundos voltando.", "Respire: solte o ar na força, puxe na volta."] : [])].map((t, k) => <li key={k}><span>{k + 1}</span>{t}</li>)}</ol>
+      {x.erro && <div className="verdict warn" style={{ fontWeight: 500 }}><b>Erro comum:</b> {x.erro}</div>}
+      {best != null && <div className="tag" style={{ margin: "10px 0" }}>Seu recorde: <b>{String(best).replace(".", ",")} kg</b> · última: {String(hist.at(-1)[1]).replace(".", ",")} kg</div>}
+      <div className="tag" style={{ fontSize: 12, margin: "10px 0" }}>Carga: comece leve, sobrando 2 repetições. Fez todas com folga? Na próxima, +1–2 kg.</div>
+      <a className="btn" href={`https://www.youtube.com/results?search_query=${encodeURIComponent(x.n.replace(/\(.*?\)/g, "") + " execução correta")}`} target="_blank" rel="noreferrer"><Icon n="ext" s={16} /> Ver vídeo de como fazer</a>
+    </div>
+  );
+}
+function ExLibrary({ settings, saveSettings }) {
+  const [q, setQ] = useState(""), [mode, setMode] = useState("todos"), [flt, setFlt] = useState(null), [open, setOpen] = useState(null);
+  const favs = settings.supplies?._fav || [];
+  const toggleFav = (n) => { buzz(); saveSettings({ supplies: { ...settings.supplies, _fav: favs.includes(n) ? favs.filter((x) => x !== n) : [...favs, n] } }); };
+  const norm = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  let list = LIBRARY;
+  if (mode === "fav") list = list.filter((x) => favs.includes(x.n));
+  if (mode === "grupo" && flt) list = list.filter((x) => x.g === flt);
+  if (mode === "equip" && flt) list = list.filter((x) => x.eq === flt);
+  if (q.trim()) { const k = norm(q); list = list.filter((x) => norm(`${x.n} ${x.g} ${x.eq} ${x.foco || ""} ${x.pm.join(" ")}`).includes(k)); }
+  useEffect(() => { if (open) scrollTo(0, 0); }, [open]);
+  if (open) { const x = LIBRARY.find((y) => y.n === open); return <ExDetail x={x} onClose={() => setOpen(null)} fav={favs.includes(x.n)} toggleFav={() => toggleFav(x.n)} settings={settings} />; }
+  return (
+    <>
+      <input className="exsearch" placeholder="Buscar exercício ou músculo (ex.: peito, tríceps)" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="seg">
+        {[["todos", "Todos"], ["fav", "★ Favoritos"], ["grupo", "Grupos musculares"], ["equip", "Equipamento"]].map(([k, l]) => <button key={k} className={mode === k ? "on" : ""} onClick={() => { setMode(k); setFlt(null); }}>{l}</button>)}
+      </div>
+      {(mode === "grupo" || mode === "equip") && <div className="seg">{(mode === "grupo" ? GROUPS_EX : EQUIP).map((g) => <button key={g} className={flt === g ? "on" : ""} onClick={() => setFlt(flt === g ? null : g)}>{g}</button>)}</div>}
+      <div className="tag" style={{ margin: "4px 0 8px" }}>{list.length} exercícios{mode === "fav" && !list.length ? " · toque na ☆ de um exercício para favoritar" : ""}</div>
+      <div className="exgrid">
+        {list.map((x) => (
+          <button key={x.n} className="excard" onClick={() => { buzz(); setOpen(x.n); }}>
+            <span className="eximg"><img src={`/ex/${x.img}.jpg`} alt="" loading="lazy" />
+              <span className={"exstar" + (favs.includes(x.n) ? " on" : "")} onClick={(e) => { e.stopPropagation(); toggleFav(x.n); }}>{favs.includes(x.n) ? "★" : "☆"}</span></span>
+            <b>{x.n}</b><span className="tag">{x.g}</span>
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
