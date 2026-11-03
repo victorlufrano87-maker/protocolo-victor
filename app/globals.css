@@ -287,3 +287,8 @@ nav button{font-size:10px;letter-spacing:.02em;padding:10px 0}
 .ed-nums{display:flex;gap:6px;margin-top:6px}.ed-nums label{display:flex;flex-direction:column;font-size:11px;color:var(--mute)}
 .ed-nums input{width:58px;padding:6px;font-size:14px}
 .ed-btns{display:flex;flex-direction:column;gap:4px}.ed-btns button{padding:4px 9px;min-height:0;font-size:13px}
+
+.subs{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px}
+.subchip{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:12px;min-height:0;width:84px;font-size:12px}
+.subchip.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.minipart{width:70px;height:64px;background:#fff;border-radius:8px}

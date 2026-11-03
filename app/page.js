@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RECIPES } from "@/lib/recipes";
 import { WORKOUTS } from "@/lib/workouts";
 import { EXMETA } from "@/lib/exmeta";
-import { LIBRARY, GROUPS_EX, EQUIP } from "@/lib/library";
+import { LIBRARY, GROUPS_EX, EQUIP, SUBS, subOf } from "@/lib/library";
 import { myWorkouts, suggestPlan, suggestWhy, nextLoad, fromLib } from "@/lib/builder";
 import { PHOTO_TYPES, listDaily, saveDaily } from "@/lib/photos";
 import { supabase, spNow, toMin, addDays, fmtDay } from "@/lib/supabase";
@@ -2226,13 +2226,13 @@ function ExDetail({ x, onClose, fav, toggleFav, settings }) {
   );
 }
 function ExLibrary({ settings, saveSettings }) {
-  const [q, setQ] = useState(""), [mode, setMode] = useState("todos"), [flt, setFlt] = useState(null), [open, setOpen] = useState(null);
+  const [q, setQ] = useState(""), [mode, setMode] = useState("todos"), [flt, setFlt] = useState(null), [open, setOpen] = useState(null), [sub, setSub] = useState(null);
   const favs = settings.supplies?._fav || [];
   const toggleFav = (n) => { buzz(); saveSettings({ supplies: { ...settings.supplies, _fav: favs.includes(n) ? favs.filter((x) => x !== n) : [...favs, n] } }); };
   const norm = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   let list = LIBRARY;
   if (mode === "fav") list = list.filter((x) => favs.includes(x.n));
-  if (mode === "grupo" && flt) list = list.filter((x) => x.g === flt);
+  if (mode === "grupo" && flt) list = list.filter((x) => x.g === flt && (!sub || subOf(x) === sub));
   if (mode === "equip" && flt) list = list.filter((x) => x.eq === flt);
   if (q.trim()) { const k = norm(q); list = list.filter((x) => norm(`${x.n} ${x.g} ${x.eq} ${x.foco || ""} ${x.pm.join(" ")}`).includes(k)); }
   useEffect(() => { if (open) scrollTo(0, 0); }, [open]);
@@ -2243,7 +2243,14 @@ function ExLibrary({ settings, saveSettings }) {
       <div className="seg">
         {[["todos", "Todos"], ["fav", "★ Favoritos"], ["grupo", "Grupos musculares"], ["equip", "Equipamento"]].map(([k, l]) => <button key={k} className={mode === k ? "on" : ""} onClick={() => { setMode(k); setFlt(null); }}>{l}</button>)}
       </div>
-      {(mode === "grupo" || mode === "equip") && <div className="seg">{(mode === "grupo" ? GROUPS_EX : EQUIP).map((g) => <button key={g} className={flt === g ? "on" : ""} onClick={() => setFlt(flt === g ? null : g)}>{g}</button>)}</div>}
+      {(mode === "grupo" || mode === "equip") && <div className="seg">{(mode === "grupo" ? GROUPS_EX : EQUIP).map((g) => <button key={g} className={flt === g ? "on" : ""} onClick={() => { setFlt(flt === g ? null : g); setSub(null); }}>{g}</button>)}</div>}
+      {mode === "grupo" && flt && SUBS[flt] && <>
+        <div className="lbl" style={{ margin: "4px 0" }}>Qual parte?</div>
+        <div className="subs">{SUBS[flt].map((p) => (
+          <button key={p} className={"subchip" + (sub === p ? " on" : "")} onClick={() => { buzz(); setSub(sub === p ? null : p); }}>
+            <MiniPart g={flt} p={p} /><span>{p}</span>
+          </button>))}</div>
+      </>}
       <div className="tag" style={{ margin: "4px 0 8px" }}>{list.length} exercícios{mode === "fav" && !list.length ? " · toque na ☆ de um exercício para favoritar" : ""}</div>
       <div className="exgrid">
         {list.map((x) => (
@@ -2350,5 +2357,56 @@ function WorkoutEditor({ settings, saveSettings, week, onClose }) {
       <div className="tag" style={{ fontSize: 12, marginTop: 8 }}>Tudo é salvo na hora. A ordem dos treinos (A, B, C...) segue a lista.</div>
       {pick != null && <ExPicker onClose={() => setPick(null)} onPick={(x) => { upd(pick, (w) => { const fin = w.ex.findIndex((e) => e.fin); const it = fromLib(x); if (fin >= 0 && !it.fin) w.ex.splice(fin, 0, it); else w.ex.push(it); return w; }); setPick(null); }} />}
     </>
+  );
+}
+
+/* mini figura destacando a parte do músculo */
+function MiniPart({ g, p }) {
+  const R = "#e53935", B = "#e8e9ee", S = "#b9bcc6";
+  const back = g === "Costas" || (g === "Ombros" && p === "posterior") || g === "Tríceps";
+  const on = {
+      Peito: { superior: ["pecTop"], "médio": ["pecMid"], inferior: ["pecLow"], interno: ["pecIn"] },
+      Ombros: { frontal: ["delt"], lateral: ["deltSide"], posterior: ["delt"] },
+      Costas: { largura: ["lat"], meio: ["mid"], "trapézio": ["trap"], lombar: ["low"] },
+      "Bíceps": { "bíceps": ["arm"], braquial: ["armOut", "fore"] },
+      "Tríceps": { "cabeça longa": ["armIn"], "cabeça lateral": ["armOut"] },
+      "Abdômen": { superior: ["absTop"], inferior: ["absLow"], "oblíquos": ["obl"] },
+  }[g]?.[p] || [];
+  const f = (k) => (on.includes(k) ? R : B);
+  return (
+    <svg viewBox="0 0 60 56" className="minipart">
+      <defs>
+        <clipPath id="ct"><rect x="0" y="12" width="60" height="7" /></clipPath>
+        <clipPath id="cm"><rect x="0" y="18" width="60" height="6" /></clipPath>
+        <clipPath id="cl"><rect x="0" y="23" width="60" height="8" /></clipPath>
+        <clipPath id="ci"><rect x="25" y="10" width="10" height="22" /></clipPath>
+      </defs>
+      <circle cx="30" cy="5" r="5" fill="#d9dbe2" />
+      {/* braços */}
+      <rect x="3" y="14" width="7" height="22" rx="3.5" fill={f("arm")} stroke={S} strokeWidth=".6" />
+      <rect x="50" y="14" width="7" height="22" rx="3.5" fill={f("arm")} stroke={S} strokeWidth=".6" />
+      {f("armOut") === R && <><rect x="3" y="16" width="3.5" height="18" rx="1.7" fill={R} /><rect x="53.5" y="16" width="3.5" height="18" rx="1.7" fill={R} /></>}
+      {f("armIn") === R && <><rect x="6.5" y="16" width="3.5" height="19" rx="1.7" fill={R} /><rect x="50" y="16" width="3.5" height="19" rx="1.7" fill={R} /></>}
+      <rect x="2" y="37" width="7" height="16" rx="3.5" fill={f("fore")} stroke={S} strokeWidth=".6" />
+      <rect x="51" y="37" width="7" height="16" rx="3.5" fill={f("fore")} stroke={S} strokeWidth=".6" />
+      {/* ombros */}
+      <ellipse cx="11" cy="14" rx="6" ry="6" fill={f("delt")} stroke={S} strokeWidth=".6" />
+      <ellipse cx="49" cy="14" rx="6" ry="6" fill={f("delt")} stroke={S} strokeWidth=".6" />
+      {f("deltSide") === R && <><ellipse cx="7.5" cy="14" rx="3" ry="5.5" fill={R} /><ellipse cx="52.5" cy="14" rx="3" ry="5.5" fill={R} /></>}
+      {/* tronco */}
+      <rect x="16" y="10" width="28" height="44" rx="7" fill={B} stroke={S} strokeWidth=".6" />
+      {!back ? <>
+        <path d="M30 12 C24 11 18 12 17 16 C16 24 20 30 26 31 C28 31 30 29 30 27 Z M30 12 C36 11 42 12 43 16 C44 24 40 30 34 31 C32 31 30 29 30 27 Z" fill={B} stroke={S} strokeWidth=".6" />
+        {["pecTop", "pecMid", "pecLow", "pecIn"].map((k, i) => f(k) === R && <path key={k} clipPath={`url(#${["ct", "cm", "cl", "ci"][i]})`} d="M30 12 C24 11 18 12 17 16 C16 24 20 30 26 31 C28 31 30 29 30 27 Z M30 12 C36 11 42 12 43 16 C44 24 40 30 34 31 C32 31 30 29 30 27 Z" fill={R} />)}
+        <rect x="25" y="33" width="10" height="9" rx="2" fill={f("absTop")} stroke={S} strokeWidth=".6" />
+        <rect x="25" y="42" width="10" height="10" rx="2" fill={f("absLow")} stroke={S} strokeWidth=".6" />
+        <ellipse cx="20" cy="42" rx="3" ry="8" fill={f("obl")} stroke={S} strokeWidth=".6" /><ellipse cx="40" cy="42" rx="3" ry="8" fill={f("obl")} stroke={S} strokeWidth=".6" />
+      </> : <>
+        <path d="M30 9 L38 15 L34 30 L30 32 L26 30 L22 15 Z" fill={f("trap")} stroke={S} strokeWidth=".6" />
+        <path d="M22 18 C17 22 17 34 21 42 L27 40 L26 22 Z M38 18 C43 22 43 34 39 42 L33 40 L34 22 Z" fill={f("lat")} stroke={S} strokeWidth=".6" />
+        <ellipse cx="30" cy="34" rx="4" ry="6" fill={f("mid")} stroke={S} strokeWidth=".6" />
+        <ellipse cx="30" cy="48" rx="7" ry="4" fill={f("low")} stroke={S} strokeWidth=".6" />
+      </>}
+    </svg>
   );
 }
