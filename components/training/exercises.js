@@ -8,7 +8,12 @@ import { musclesOf, weekMuscles } from '@/lib/training/muscles.mjs';
 const images = { 'lat-pulldown': 'Wide-Grip_Lat_Pulldown', 'db-shoulder': 'Dumbbell_Shoulder_Press', 'db-curl': 'Dumbbell_Alternate_Bicep_Curl', 'cable-triceps': 'Triceps_Pushdown', 'db-hammer': 'Hammer_Curls', 'machine-squat': 'Leg_Press', goblet: 'Goblet_Squat', squat: 'Bodyweight_Squat', pushup: 'Pushups', 'cable-row': 'Seated_Cable_Rows', 'db-row': 'One-Arm_Dumbbell_Row', rdl: 'Romanian_Deadlift', 'curl-machine': 'Seated_Leg_Curl', deadbug: 'Dead_Bug', lateral: 'Side_Lateral_Raise', calf: 'Standing_Calf_Raises' };
 export function ExerciseGuide({ exercise }) {
   const image = exercise.id === 'press-machine' ? 'Machine_Bench_Press' : images[exercise.id];
-  return <details className="tr-card tr-guide" key={exercise.id}><summary>Ver execução e músculos trabalhados</summary>{image && <ExAnim img={image} name={exercise.name} />}<BodyMap pm={musclesOf(exercise.id)} /><p>{musclesOf(exercise.id).join(' · ')}</p><p>Use as instruções abaixo para a variação do seu treino. Pare se sentir dor.</p><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' execução correta')}`} target="_blank" rel="noreferrer">Buscar demonstração em vídeo ↗</a></details>;
+  const [missing, setMissing] = useState(false), [missingEnd, setMissingEnd] = useState(false);
+  return <section className="tr-demonstration" key={exercise.id}>
+    <div className="tr-row"><h2>Como executar</h2><a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name + ' execução correta')}`} target="_blank" rel="noreferrer">Ver vídeo ↗</a></div>
+    {image && !missing ? <div className="exd-photos tr-execution-photos"><figure><img src={`/ex/${image}.jpg`} alt={`${exercise.name}: posição inicial`} onError={() => setMissing(true)} /><figcaption>1 · Posição inicial</figcaption></figure>{!missingEnd && <figure><img src={`/ex/${image}_1.jpg`} alt={`${exercise.name}: posição final`} onError={() => setMissingEnd(true)} /><figcaption>2 · Posição final</figcaption></figure>}</div> : <p className="tr-small tr-image-fallback">Esta variação ainda não tem fotos próprias. Use as instruções e consulte a demonstração em vídeo.</p>}
+    <details className="tr-guide"><summary>Ver execução e músculos trabalhados</summary><BodyMap pm={musclesOf(exercise.id)} /><p>{musclesOf(exercise.id).join(' · ')}</p></details>
+  </section>;
 }
 export function TrainingLibrary() {
   const [query, setQuery] = useState(''), [group, setGroup] = useState(''), [equipment, setEquipment] = useState(''), [open, setOpen] = useState(null);

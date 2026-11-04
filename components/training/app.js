@@ -364,6 +364,7 @@ function Session({
   onComplete
 }) {
   const key = `training_session_${uid}`;
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [draft, setDraft] = useState(() => {
     const old = read(key, null);
     return old?.planId === plan.id && old.workoutId === workout.id ? old : {
@@ -381,6 +382,7 @@ function Session({
     };
   });
   const [index, setIndex] = useState(0),
+    [listOpen, setListOpen] = useState(false),
     [review, setReview] = useState(false),
     [error, setError] = useState("");
   const [rest, startRest] = useRestTimer(`training:${uid}:${draft.id}`, () => {});
@@ -416,7 +418,12 @@ function Session({
       sets
     })) startRest(slot.rest);
   }
-  return <main className="training tr-session"><div className="tr-row"><button onClick={onClose}>← Pausar</button><span className="tr-small">{workout.name}</span></div>{rest > 0 && <button className="tr-rest" onClick={() => startRest(0)}>Descanso · {rest}s <span>Pular</span></button>}
+  const totalSets = workout.exercises.reduce((n, x) => n + x.sets, 0);
+  return <main className="training tr-session"><header className="tr-session-toolbar"><button onClick={onClose} aria-label="Pausar treino">← Pausar</button><span>{workout.name}</span>{workout.kind === "strength" && <button aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}>{listOpen ? "Fechar lista" : "Lista"}</button>}</header>
+  {workout.kind === "strength" && <div className="tr-session-progress"><div><span>{draft.sets.length}/{totalSets} séries concluídas</span><span>{Math.round(draft.sets.length / Math.max(1,totalSets) * 100)}%</span></div><progress aria-label="Progresso do treino" max={Math.max(1,totalSets)} value={draft.sets.length} /></div>}
+  {listOpen && <section className="tr-card tr-session-list"><h2>Exercícios do treino</h2>{workout.exercises.map((x, i) => { const count = draft.sets.filter(s => s.slotId === x.id).length; return <button key={x.id} className={i === index ? "current" : ""} onClick={() => { setIndex(i); setReview(false); setListOpen(false); window.scrollTo(0,0); }}><span>{count === x.sets ? "✓" : i + 1}</span><b>{CATALOG.find(e => e.id === draft.swaps[x.id])?.name || x.name}</b><small>{count}/{x.sets}</small></button>; })}</section>}
+  {rest > 0 && <section className="tr-rest-panel" role="status"><div><span>DESCANSO</span><strong>{Math.floor(rest / 60)}:{String(rest % 60).padStart(2,"0")}</strong></div><div><button onClick={() => startRest(rest + 15)}>+15s</button><button onClick={() => startRest(0)}>Pular descanso</button></div></section>}
+
  {review || workout.kind === "recovery" ? <section className="tr-card"><span className="tr-eyebrow">ANTES DE FECHAR</span><h1>Como foi<br />para você?</h1><p>{draft.sets.length} séries registradas. Uma sessão parcial também conta como registro.</p><label>Esforço da sessão: {draft.feedback.effort}/10<input type="range" min="1" max="10" value={draft.feedback.effort} onChange={e => update({
           ...draft,
           feedback: {
@@ -453,7 +460,11 @@ function Session({
           return;
         }
         onComplete(draft);
-      }}>Guardar minha sessão</button>{workout.kind === "strength" && <button onClick={() => setReview(false)}>Voltar aos exercícios</button>}</section> : <><div className="tr-hero"><span className="tr-eyebrow">EXERCÍCIO {index + 1} DE {workout.exercises.length}</span><h1>{exercise.name}</h1><p>{slot.sets} séries · {slot.reps} repetições · {slot.rest}s de descanso</p></div><details className="tr-card"><summary>Antes da primeira série: aquecimento</summary><p>{workout.warmup}</p></details><section className="tr-card tr-prescription"><h2>Seu objetivo neste exercício</h2><strong>{slot.sets} séries de {slot.reps} repetições</strong><p>Descanse {slot.rest} segundos entre as séries. Termine sentindo que conseguiria fazer mais {slot.rir} repetições com boa técnica.</p><p className="tr-small">Escolha uma carga leve o suficiente para manter o movimento controlado. Para exercícios sem peso externo, registre 0 kg.</p>{lastSets.length > 0 && <p>Último registro: {lastSets.map(s => `${s.reps} repetições × ${s.kg} kg`).join(" · ")}</p>}</section><ExerciseGuide exercise={exercise} /><section className="tr-card"><h2>Faça com controle.</h2><ol>{exercise.cues.map(c => <li key={c}>{c}</li>)}</ol><p className="tr-small">Termine com cerca de {slot.rir} repetições de reserva. Se sentir dor, pare.</p>{slot.alternatives.length > 0 && <label>Precisa de uma alternativa?<select value={exercise.id} onChange={e => {
+      }}>Guardar minha sessão</button>{workout.kind === "strength" && <button onClick={() => setReview(false)}>Voltar aos exercícios</button>}</section> : <><div className="tr-exercise-heading"><span className="tr-eyebrow">EXERCÍCIO {index + 1} DE {workout.exercises.length}</span><h1>{exercise.name}</h1></div>
+  <section className="tr-prescription tr-prescription-compact"><div><span>SÉRIES</span><b>{slot.sets}</b></div><div><span>REPETIÇÕES</span><b>{slot.reps}</b></div><div><span>DESCANSO</span><b>{slot.rest}s</b></div><p>{slot.sets} séries de {slot.reps} repetições · termine com {slot.rir} repetições de reserva.</p></section>
+  <ExerciseGuide key={exercise.id} exercise={exercise} />
+  <section className="tr-technique"><ol>{exercise.cues.map((c,i) => <li key={c}><span>{i+1}</span>{c}</li>)}</ol><p className="tr-small">Movimento controlado, sem prender a respiração. Se sentir dor, pare.</p><details><summary>Aquecimento e escolha da carga</summary><p>{workout.warmup}</p><p>Use uma carga que permita completar a faixa mantendo a técnica. Para peso do corpo, registre 0 kg.</p></details>
+{slot.alternatives.length > 0 && <label>Precisa de uma alternativa?<select value={exercise.id} onChange={e => {
             if (draft.sets.some(s => s.slotId === slot.id)) {
               setError("Para manter seu registro consistente, escolha a alternativa antes de registrar as séries deste exercício.");
               return;
@@ -465,9 +476,9 @@ function Session({
                 [slot.id]: e.target.value
               }
             });
-          }}>{[slot.id, ...slot.alternatives].map(id => <option key={id} value={id}>{CATALOG.find(x => x.id === id)?.name}</option>)}</select></label>}</section><div className="tr-sets">{Array.from({
+          }}>{[slot.id, ...slot.alternatives].map(id => <option key={id} value={id}>{CATALOG.find(x => x.id === id)?.name}</option>)}</select></label>}</section><section className="tr-record"><div className="tr-row"><h2>Suas séries</h2><span>{draft.sets.filter(s => s.slotId === slot.id).length}/{slot.sets} registradas</span></div>{lastSets.length > 0 && <p className="tr-last-record">Último registro: {lastSets.map(s => `${s.reps} reps × ${s.kg} kg`).join(" · ")}</p>}<div className="tr-sets">{Array.from({
           length: slot.sets
-        }, (_, i) => <SetRow key={`${exercise.id}:${i}`} number={i + 1} target={slot.reps} initial={draft.sets.find(s => s.slotId === slot.id && s.index === i)} onDone={(r, k) => setDone(i, r, k)} />)}</div><div className="tr-row"><button disabled={index === 0} onClick={() => setIndex(index - 1)}>Anterior</button><button className="tr-primary" onClick={() => index === workout.exercises.length - 1 ? setReview(true) : setIndex(index + 1)}>{index === workout.exercises.length - 1 ? "Revisar e concluir" : "Próximo exercício →"}</button></div><button className="tr-text-button" onClick={() => setReview(true)}>Encerrar e registrar sessão parcial</button></>}{error && <p className="tr-alert" role="alert">{error}</p>}</main>;
+        }, (_, i) => <SetRow key={`${exercise.id}:${i}`} number={i + 1} target={slot.reps} initial={draft.sets.find(s => s.slotId === slot.id && s.index === i)} onDone={(r, k) => setDone(i, r, k)} />)}</div></section><div className="tr-session-navigation"><button disabled={index === 0} onClick={() => { setIndex(index - 1); window.scrollTo(0,0); }}>← Anterior</button><button className="tr-primary" onClick={() => { if(index === workout.exercises.length - 1) setReview(true); else setIndex(index + 1); window.scrollTo(0,0); }}>{index === workout.exercises.length - 1 ? "Revisar e concluir" : "Próximo exercício →"}</button></div><button className="tr-text-button" onClick={() => setReview(true)}>Encerrar e registrar sessão parcial</button></>}{error && <p className="tr-alert" role="alert">{error}</p>}</main>;
 }
 function SetRow({
   number,
@@ -477,7 +488,7 @@ function SetRow({
 }) {
   const [reps, setReps] = useState(initial?.reps || ""),
     [kg, setKg] = useState(initial?.kg ?? 0);
-  return <div className={`tr-set ${initial ? "done" : ""}`}><b>Série {number}<span className="tr-set-target">Meta: {target} reps</span></b><label>Repetições feitas<input placeholder={target}  aria-label={`Repetições da série ${number}`} inputMode="numeric" value={reps} onChange={e => setReps(e.target.value)} /></label><label>Carga (kg)<input aria-label={`Carga da série ${number}`} inputMode="decimal" value={kg} onChange={e => setKg(e.target.value.replace(",", "."))} /></label><button aria-label={`Registrar série ${number}`} onClick={() => onDone(reps, kg)}>{initial ? "✓ Salva" : "Feito"}</button></div>;
+  return <div className={`tr-set ${initial ? "done" : ""}`}><b><span className="tr-set-number">{initial ? "✓" : number}</span><span className="tr-set-target">Meta: {target} reps</span></b><label>Repetições feitas<input placeholder={target}  aria-label={`Repetições da série ${number}`} inputMode="numeric" value={reps} onChange={e => setReps(e.target.value)} /></label><label>Carga (kg)<input aria-label={`Carga da série ${number}`} inputMode="decimal" value={kg} onChange={e => setKg(e.target.value.replace(",", "."))} /></label><button aria-label={`Registrar série ${number}`} onClick={() => onDone(reps, kg)}>{initial ? "✓" : "Feito"}</button></div>;
 }
 function Invites() {
   const [email, setEmail] = useState(""),
