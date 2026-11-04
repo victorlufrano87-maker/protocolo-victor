@@ -201,7 +201,7 @@ const experienced = { ...healthy, experience: 'regular', break: 'none', place: '
 test('experience and schedule choose an actual split with different upper/lower content', () => {
   const plan = buildPlan(experienced);
   assert.equal(plan.division, 'upper_lower');
-  assert.equal(plan.generatorVersion, 2);
+  assert.equal(plan.generatorVersion, 3);
   assert.equal(plan.workouts.filter(w => w.focus === 'upper').length, 2);
   assert.equal(plan.workouts.filter(w => w.focus === 'lower').length, 2);
   for (const w of plan.workouts) {
@@ -256,4 +256,30 @@ test('expanded exercises and alternatives respect overhead/floor preferences eve
     assert.ok(eligible.has(x.id));
     for (const id of x.alternatives) assert.ok(eligible.has(id));
   }
+});
+
+test('recovery modifies volume without overriding a compatible split', () => {
+  const normal = buildPlan(experienced);
+  for (const patch of [{sleep:'low'}, {stress:'high'}, {activity:'high'}]) {
+    const adjusted = buildPlan({...experienced, ...patch});
+    assert.equal(adjusted.division, 'upper_lower');
+    assert.deepEqual(adjusted.workouts.map(w => w.focus), normal.workouts.map(w => w.focus));
+    assert.ok(adjusted.workouts[0].exercises[0].sets < normal.workouts[0].exercises[0].sets);
+  }
+  const poor = buildPlan(experienced, {recent:[{feedback:{pain:false,effort:9,recovery:'poor'}}]});
+  assert.equal(poor.division, 'upper_lower');
+  assert.equal(poor.workouts[0].exercises[0].sets, 2);
+});
+test('saved returning/no-break profile gets a conservative split with an explicit inconsistency note', () => {
+  const profile = {...experienced, experience:'returning', break:'none', sleep:'low', priorities:['upper'], days:['mon','tue','wed','thu','fri']};
+  const plan = buildPlan(profile);
+  assert.equal(plan.division, 'upper_lower');
+  assert.equal(plan.workouts.filter(w => w.focus === 'upper').length, 2);
+  assert.equal(plan.workouts.filter(w => w.focus === 'lower').length, 2);
+  assert.ok(plan.workouts.filter(w => w.kind === 'strength').every(w => w.exercises.every(x => x.sets === 2)));
+  assert.ok(plan.notes.some(n => n.includes('ausência de pausa')));
+  assert.equal(buildPlan({...profile,break:'short'}).division, 'upper_lower');
+  assert.equal(buildPlan({...profile,break:'medium'}).division, 'full_body');
+  assert.equal(buildPlan({...profile,break:'long'}).division, 'full_body');
+  assert.equal(buildPlan({...profile,experience:'new'}).division, 'full_body');
 });
