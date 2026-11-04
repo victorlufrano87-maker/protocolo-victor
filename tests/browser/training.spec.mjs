@@ -217,6 +217,10 @@ test("library search, illustrated explanation, weekly map and per-set targets wo
   await page.getByRole('button', { name: 'Começar este treino', exact: true }).first().click();
   await expect(page.locator('.tr-prescription')).toContainText('8–12 repetições');
   await expect(page.locator('.tr-set-target').first()).toContainText('Meta: 8–12 reps');
+  await expect(page.locator('.tr-execution-photos img')).toHaveCount(2);
+  await expect(page.locator('.tr-execution-photos img').first()).toBeVisible();
+  await expect(page.getByRole('progressbar', {name:'Progresso do treino'})).toBeVisible();
+  await page.screenshot({ path: 'test-results/training-session-refined.png', fullPage: true });
   await expect(page.getByRole('textbox', { name: 'Repetições da série 1', exact: true })).toHaveValue('');
   await page.getByText('Ver execução e músculos trabalhados', { exact: true }).click();
   await expect(page.locator('.tr-guide .bodymap')).toBeVisible();
@@ -240,6 +244,29 @@ test('existing client can upgrade an old plan and see their actual split and rat
   await expect(page.getByText(/Quatro sessões divididas entre superiores e inferiores/)).toBeVisible();
   await page.getByRole('button', { name: 'Explorar exercícios por músculo →', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Grupos musculares', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('guided session records a set, controls rest and navigates its exercise list without losing saved work', async ({ page }) => {
+  const profile = {user_id:uid, answers:healthy, updated_at:new Date().toISOString()};
+  const plan = {id:'33333333-3333-4333-8333-333333333333',profile_version:profile.updated_at,created_at:profile.updated_at,plan:buildPlan(healthy)};
+  const {errors} = await setup(page,{profile,plan});
+  await page.getByRole('button',{name:'Começar este treino',exact:true}).first().click();
+  await page.getByRole('textbox',{name:'Repetições da série 1',exact:true}).fill('10');
+  await page.getByRole('button',{name:'Registrar série 1',exact:true}).click();
+  await expect(page.locator('.tr-rest-panel')).toBeVisible();
+  await page.getByRole('button',{name:'+15s',exact:true}).click();
+  await expect(page.locator('.tr-rest-panel strong')).toContainText('1:');
+  await page.getByRole('button',{name:'Pular descanso',exact:true}).click();
+  await expect(page.locator('.tr-rest-panel')).toHaveCount(0);
+  await page.getByRole('button',{name:'Lista',exact:true}).click();
+  await expect(page.locator('.tr-session-list button')).toHaveCount(plan.plan.workouts[0].exercises.length);
+  await page.locator('.tr-session-list button').nth(1).click();
+  await expect(page.getByRole('heading',{level:1})).toHaveText(plan.plan.workouts[0].exercises[1].name);
+  await page.getByRole('button',{name:'← Anterior',exact:true}).click();
+  await expect(page.getByRole('textbox',{name:'Repetições da série 1',exact:true})).toHaveValue('10');
+  await expect(page.getByRole('progressbar',{name:'Progresso do treino'})).toHaveAttribute('value','1');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
 
