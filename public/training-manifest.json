@@ -1,7 +1,7 @@
 {
   "id": "/treino",
-  "name": "GYM RATS",
-  "short_name": "GYM RATS",
+  "name": "Tropa do Batata",
+  "short_name": "Tropa do Batata",
   "start_url": "/treino",
   "display": "standalone",
   "background_color": "#09090b",

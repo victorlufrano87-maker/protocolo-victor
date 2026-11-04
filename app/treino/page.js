@@ -1,14 +1,14 @@
 import TrainingApp from "@/components/training/app";
 import "./training.css";
 export const metadata = {
-  title: "GYM RATS · Seu treino",
+  title: "Tropa do Batata · Seu treino",
   robots: {
     index: false
   },
   manifest: "/training-manifest.json",
   appleWebApp: {
     capable: true,
-    title: "GYM RATS",
+    title: "Tropa do Batata",
     statusBarStyle: "black-translucent"
   }
 };

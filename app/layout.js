@@ -1,9 +1,9 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "GYM RATS",
+  title: "Tropa do Batata",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "GYM RATS", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Tropa do Batata", statusBarStyle: "black-translucent" },
   icons: { icon: "/gym-rats-icon.svg", apple: "/gym-rats-180.png" },
 };
 export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#09090b" };
