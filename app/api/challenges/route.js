@@ -9,10 +9,12 @@ const dbCheck=r=>{if(r.error)throw Object.assign(new Error('O desafio precisa se
 const fail=e=>json({error:e instanceof ChallengeError?e.message:e.status===401?'Entre novamente para continuar.':e.status===403?'Acesso não permitido.':e.status===503?e.message:'Não consegui concluir agora. Tente novamente.'},e.status||500);
 async function group(db,id){if(!/^[a-f0-9-]{36}$/i.test(id||''))throw new ChallengeError('Desafio inválido.');const r=dbCheck(await db.from('gym_challenges').select('*').eq('id',id).maybeSingle());if(!r)throw new ChallengeError('Desafio não encontrado.',404);return r;}
 async function signed(db,state,uid){
+  if(!state.members.some(m=>m.id===uid))return null;
   const view=projectChallenge(state,uid,Date.now()),paths=[...new Set(view.entries.flatMap(e=>[e.proof?.path,e.evidence?.path]).filter(Boolean))];
   if(paths.length){const r=dbCheck(await db.storage.from(BUCKET).createSignedUrls(paths,180));const urls=Object.fromEntries(paths.map((p,i)=>[p,r?.[i]?.signedUrl||null]));view.entries=view.entries.map(e=>({...e,proof:{...e.proof,url:urls[e.proof.path]},evidence:e.evidence?{...e.evidence,url:urls[e.evidence.path]}:null}));}
   return view;
 }
+async function respond(db,state,uid){const challenge=await signed(db,state,uid);if(challenge)return json({challenge});if((state.requests||[]).some(r=>r.id===uid))return json({joinRequested:true,name:state.name});throw new ChallengeError('Você não participa deste desafio.',403);}
 export async function GET(req){try{
   const {uid,db}=await trainingAccess(req),id=new URL(req.url).searchParams.get('id');
   if(!id){const rows=dbCheck(await db.from('gym_challenges').select('id,state').contains('member_ids',[uid]).order('created_at',{ascending:false}).limit(30));return json({groups:rows.map(r=>({id:r.id,name:r.state.name,starts:r.state.starts,ends:r.state.ends,members:r.state.members.length}))});}
@@ -49,7 +51,7 @@ export async function POST(req){let db,uploads=[],committed=false;try{
   if(proof&&proof.mime!=='image/jpeg')throw new ChallengeError('A foto principal precisa ser capturada pela câmera do aplicativo.');
   for(let attempt=0;attempt<3;attempt++){
     const row=await group(db,id);if(action!=='join')requireMember(row.state,uid);
-    if(row.state.processed.includes(body.operationId))return json({challenge:await signed(db,row.state,uid)});
+    if(row.state.processed.includes(body.operationId))return respond(db,row.state,uid);
     let metrics=null;
     if(body.trainingSessionId){if(!/^[a-f0-9-]{36}$/i.test(body.trainingSessionId))throw new ChallengeError('Registro de treino inválido.');const s=dbCheck(await db.from('training_sessions').select('id,sets,completed_at,workout_id').eq('id',body.trainingSessionId).eq('user_id',uid).maybeSingle());const activity=row.state.activities.find(a=>a.id===body.activityId&&a.userId===uid);if(!s||!activity||!s.workout_id.startsWith('strength-')||Date.parse(s.completed_at)<Date.parse(activity.startedAt)||Date.parse(s.completed_at)>Date.parse(activity.endedAt||Date.now()))throw new ChallengeError('Vincule um treino seu realizado durante esta atividade.');metrics=metricsFromSession(s);}
     const uploadPrefix=`${id}/${uid}/${body.operationId}`;
@@ -62,7 +64,7 @@ export async function POST(req){let db,uploads=[],committed=false;try{
     const activity=action==='start'?next.activities.find(a=>a.id===context.id):row.state.activities.find(a=>a.id===body.activityId);
     const written=await db.rpc('gym_challenge_commit',{p_id:id,p_version:row.version,p_state:next,p_actor:uid,p_live:action==='start'?'start':['abandon','submit'].includes(action)?'end':null,p_activity:activity?.id||null});
     if(written.error){if(written.error.code==='23505')throw new ChallengeError('Você já tem uma atividade aberta em outro desafio. Conclua ou encerre antes de iniciar outra.');throw new ChallengeError('Não consegui salvar a alteração no desafio.',503);}
-    if(written.data){committed=true;return json({challenge:await signed(db,next,uid)});}
+    if(written.data){committed=true;return respond(db,next,uid);}
   }
   throw new ChallengeError('O grupo foi atualizado ao mesmo tempo. Tente novamente.',409);
 }catch(e){if(uploads.length&&!committed)try{await db.storage.from(BUCKET).remove(uploads);}catch{}return fail(e);}}

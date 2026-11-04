@@ -1,6 +1,7 @@
 "use client";
 import Cardio from "./cardio";
 import ChallengeApp from "@/components/challenge/app";
+import { isPermanentFailure, clearUserStorage } from "@/lib/training/queue.mjs";
 import TrainingHome from "./home";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -98,11 +99,14 @@ function TrainingSpace({
     [busy, setBusy] = useState(false),
     [offline, setOffline] = useState(false),
     [pending, setPending] = useState([]),
+    [rejected, setRejected] = useState([]),
     [tab, setTab] = useState(() => typeof window !== "undefined" && new URLSearchParams(location.search).has("desafio") ? "challenge" : "home"),
     [mode, setMode] = useState("dashboard"),
     [active, setActive] = useState(null);
-  const flight = useRef(null),
+  const fromChallenge = useRef(false),
+    flight = useRef(null),
     queueKey = `training_queue_${uid}`,
+    rejectedKey = `training_rejected_${uid}`,
     cacheKey = `training_cache_${uid}`;
   const load = useCallback(async () => {
     try {
@@ -130,7 +134,15 @@ function TrainingSpace({
       while (true) {
         const queue = read(queueKey, []);
         if (!queue.length) break;
-        await request("/sessions", queue[0]);
+        try {
+          await request("/sessions", queue[0]);
+        } catch (e) {
+          if (!isPermanentFailure(e.status)) throw e;
+          // Sessão recusada pelo servidor: sai da fila para não travar as outras, mas fica guardada para o usuário decidir.
+          const rejected = [...read(rejectedKey, []).filter(s => s.id !== queue[0].id), { ...queue[0], rejectedReason: e.message, rejectedAt: new Date().toISOString() }];
+          localStorage.setItem(rejectedKey, JSON.stringify(rejected));
+          setRejected(rejected);
+        }
         const next = read(queueKey, []).filter(s => s.id !== queue[0].id);
         localStorage.setItem(queueKey, JSON.stringify(next));
         setPending(next);
@@ -143,6 +155,7 @@ function TrainingSpace({
   }, [uid, load]);
   useEffect(() => {
     setPending(read(queueKey, []));
+    setRejected(read(rejectedKey, []));
     load().then(flush);
     const on = () => flush();
     window.addEventListener("online", on);
@@ -196,6 +209,7 @@ function TrainingSpace({
       setActive(null);
       if (!record.workoutId.startsWith("cardio-")) localStorage.removeItem(`training_session_${uid}`);
       flush();
+      if (fromChallenge.current) { fromChallenge.current = false; setTab("challenge"); }
       return true;
     } catch {
       setError("O celular está sem espaço para guardar a sessão. Libere espaço e tente concluir novamente.");
@@ -203,7 +217,7 @@ function TrainingSpace({
     }
   }
   const allSessions = [...new Map([...(data?.sessions || []), ...pending].map(s => [s.id, s])).values()].sort((a, b) => new Date(b.completed_at || b.completedAt || b.created_at) - new Date(a.completed_at || a.completedAt || a.created_at));
-  if (!data) return <main className="training"><Brand /><div className="tr-card"><h1>{error ? "Vamos conferir seu acesso" : "Carregando seu espaço…"}</h1>{error && <p role="alert">{error}</p>}<button onClick={load}>Tentar novamente</button><button onClick={() => supabase.auth.signOut()}>Sair</button></div></main>;
+  if (!data) return <main className="training"><Brand /><div className="tr-card"><h1>{error ? "Vamos conferir seu acesso" : "Carregando seu espaço…"}</h1>{error && <p role="alert">{error}</p>}<button onClick={load}>Tentar novamente</button><button onClick={() => { if (read(queueKey, []).length && !confirm("Há sessões ainda não enviadas. Sair apaga essas sessões deste celular. Continuar?")) return; clearUserStorage(localStorage, uid); supabase.auth.signOut(); }}>Sair</button></div></main>;
   const profile = data.profile?.answers,
     gate = profile ? screening(profile) : null,
     hasPain = allSessions.some(s => s.feedback?.pain),
@@ -217,7 +231,8 @@ function TrainingSpace({
   if (mode === "wizard") return <main className="training"><Brand />{error && <p className="tr-alert" role="alert">{error}</p>}<Wizard uid={uid} initial={profile} busy={busy} onSave={profileSaved} onExit={() => setMode("dashboard")} /></main>;
   if (mode === "photo") return <main className="training"><Brand /><PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} /><button className="tr-primary" disabled={busy} onClick={generate}>{busy ? "Preparando sua proposta…" : "Continuar e montar meu treino"}</button>{error && <p role="alert">{error}</p>}</main>;
   return <main className="training"><Brand /><div className="tr-topline"><span>{profile ? `Olá, ${profile.name.split(" ")[0]}` : "BEM-VINDO AO SEU ESPAÇO"}</span><span className="tr-small" role="status">{pending.length ? `${pending.length} sessão(ões) aguardando envio` : offline ? "Modo offline" : "Conectado"}</span></div>{error && <p className="tr-alert" role="alert">{error}</p>}
- {tab === "challenge" && <ChallengeApp uid={uid} sessions={allSessions} />}
+ {rejected.length > 0 && <section className="tr-card tr-caution" role="alert"><h2>{rejected.length} sessão(ões) não foram aceitas</h2>{rejected.map(s => <p key={s.id}>{date(s.completedAt || s.created_at)} · {s.rejectedReason}</p>)}<p className="tr-small">As outras sessões continuam sincronizando normalmente.</p><button onClick={() => { localStorage.removeItem(rejectedKey); setRejected([]); }}>Descartar estas sessões</button></section>}
+ {tab === "challenge" && <ChallengeApp uid={uid} sessions={allSessions} pendingIds={pending.map(s => s.id)} onTrain={() => { fromChallenge.current = true; setTab("home"); window.scrollTo(0, 0); }} />}
  {tab === "home" && <TrainingHome profile={profile} record={data.plan} sessions={allSessions} ready={!!gate?.ready && !hasPain && !stale} onStart={startWorkout} onNavigate={key => { setTab(key); window.scrollTo(0,0); }} onSetup={() => setMode("wizard")} onGenerate={generate} busy={busy} />}
  {tab === "plan" && <>
  <section className="tr-card"><h2>Qual músculo quer consultar?</h2><p>Veja os exercícios por grupo muscular e por parte do músculo.</p><button onClick={() => { setTab("exercises"); window.scrollTo(0, 0); }}>Explorar exercícios por músculo →</button></section>
@@ -226,7 +241,7 @@ function TrainingSpace({
  {tab === "cardio" && (!profile || !gate?.ready || hasPain || !data.plan || stale ? <section className="tr-card"><h1>Antes do cardio</h1><p>Preencha ou revise seu perfil e mantenha uma proposta atualizada. Se relatou dor, busque orientação antes de iniciar outra rotina automática.</p><button onClick={() => setTab("plan")}>Voltar ao treino</button></section> : <Cardio uid={uid} plan={{...data.plan,profile_snapshot:profile}} onComplete={completed} />)}
  {tab === "exercises" && <TrainingLibrary />}
  {tab === "progress" && <><button className="tr-back" onClick={() => setTab("home")}>← Início</button><div className="tr-hero"><span className="tr-eyebrow">CONSISTÊNCIA, UM DIA POR VEZ</span><h1>Seu caminho<br />até aqui.</h1></div><div className="tr-metrics"><span><b>{allSessions.length}</b>sessões registradas</span><span><b>{allSessions[0]?.feedback?.effort || "—"}</b>último esforço /10</span></div>{!allSessions.length && <p>Seu primeiro registro aparece aqui depois do treino.</p>}{allSessions.map(s => <article className="tr-card" key={s.id}><div className="tr-row"><b>{date(s.completed_at || s.completedAt || s.created_at)}</b><span className="tr-tag">{pending.some(x => x.id === s.id) ? "No celular" : "Sincronizado"}</span></div><p>{s.feedback?.cardio ? `${Math.floor(s.feedback.cardio.elapsedSeconds / 60)} min de cardio${s.feedback.cardio.partial ? " · parcial" : ""}` : `${s.sets.length} séries`} · esforço {s.feedback.effort}/10 · {s.feedback.pain ? "Dor relatada — avaliação necessária" : "Sem dor relatada"}</p></article>)}{profile && <PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} />}</>}
- {tab === "account" && <><h1>Seu espaço.</h1><div className="gr-account-shortcuts"><button onClick={() => setTab("exercises")}>Biblioteca de exercícios →</button><button onClick={() => setTab("challenge")}>Desafio da Tropa →</button><button onClick={() => setTab("progress")}>Minha evolução →</button>{data.isOwner && <button onClick={() => setTab("invites")}>Gerenciar clientes →</button>}</div><section className="tr-card"><h2>Seu perfil</h2><p>{profile ? `${profile.name} · ${profile.age} anos` : "Seu perfil ainda não foi preenchido."}</p><button onClick={() => setMode("wizard")}>Revisar perguntas e preferências</button><p className="tr-small">Ao salvar novas respostas, a proposta anterior fica desatualizada. Suas sessões anteriores continuam no histórico.</p></section><section className="tr-card"><h2>Privacidade e limites</h2><p>A foto é opcional, privada dentro do aplicativo e não é enviada à IA. Não estimamos gordura nem diagnosticamos condições pela imagem.</p><p>O responsável técnico pelo banco pode administrar os arquivos. Evite mostrar o rosto ou outras pessoas.</p><p>O plano é uma proposta inicial de treino, não uma avaliação presencial. Técnica, sintomas e recuperação importam mais que uma meta de carga.</p><p className="tr-small">Você pode excluir fotos na área Evolução. Respostas e registros ficam na sua conta.</p></section><button onClick={() => supabase.auth.signOut()}>Sair da conta</button>{data.isOwner && <a className="tr-link" href="/">Voltar ao meu aplicativo pessoal</a>}</>}
+ {tab === "account" && <><h1>Seu espaço.</h1><div className="gr-account-shortcuts"><button onClick={() => setTab("exercises")}>Biblioteca de exercícios →</button><button onClick={() => setTab("challenge")}>Desafio da Tropa →</button><button onClick={() => setTab("progress")}>Minha evolução →</button>{data.isOwner && <button onClick={() => setTab("invites")}>Gerenciar clientes →</button>}</div><section className="tr-card"><h2>Seu perfil</h2><p>{profile ? `${profile.name} · ${profile.age} anos` : "Seu perfil ainda não foi preenchido."}</p><button onClick={() => setMode("wizard")}>Revisar perguntas e preferências</button><p className="tr-small">Ao salvar novas respostas, a proposta anterior fica desatualizada. Suas sessões anteriores continuam no histórico.</p></section><section className="tr-card"><h2>Privacidade e limites</h2><p>A foto é opcional, privada dentro do aplicativo e não é enviada à IA. Não estimamos gordura nem diagnosticamos condições pela imagem.</p><p>O responsável técnico pelo banco pode administrar os arquivos. Evite mostrar o rosto ou outras pessoas.</p><p>O plano é uma proposta inicial de treino, não uma avaliação presencial. Técnica, sintomas e recuperação importam mais que uma meta de carga.</p><p className="tr-small">Você pode excluir fotos na área Evolução. Respostas e registros ficam na sua conta.</p></section><button onClick={() => { if (read(queueKey, []).length && !confirm("Há sessões ainda não enviadas. Sair apaga essas sessões deste celular. Continuar?")) return; clearUserStorage(localStorage, uid); supabase.auth.signOut(); }}>Sair da conta</button><DeleteAccount uid={uid} isOwner={data.isOwner} />{data.isOwner && <a className="tr-link" href="/">Voltar ao meu aplicativo pessoal</a>}</>}
  {tab === "invites" && data.isOwner && <Invites />}
  <nav className="tr-nav">{[["home", "Início"], ["plan", "Treino"], ["cardio", "Cardio"], ["challenge", "Desafio"], ["account", "Conta"]].map(([key, label]) => <button key={key} aria-label={label} aria-current={tab === key || (key === "home" && tab === "progress") ? "page" : undefined} className={tab === key || (key === "home" && tab === "progress") ? "on" : ""} onClick={() => {
         setTab(key);
@@ -551,4 +566,22 @@ function Invites() {
           setError(e.message);
         }
       }}>{m.status === "active" ? "Pausar acesso" : "Reativar acesso"}</button></article>)}</>;
+}
+
+function DeleteAccount({ uid, isOwner }) {
+  const [open, setOpen] = useState(false), [typed, setTyped] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  if (isOwner) return null;
+  async function remove() {
+    setBusy(true); setError("");
+    try {
+      const { data } = await supabase.auth.getSession();
+      const r = await fetch("/api/training/account", { method: "DELETE", headers: { authorization: `Bearer ${data.session?.access_token}`, "content-type": "application/json" }, body: JSON.stringify({ confirm: typed.trim() }), cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Não consegui excluir agora. Tente novamente.");
+      clearUserStorage(localStorage, uid);
+      await supabase.auth.signOut();
+      location.replace("/treino?excluida=1");
+    } catch (e) { setError(e.message); setBusy(false); }
+  }
+  return <details className="tr-card" open={open} onToggle={e => setOpen(e.currentTarget.open)}><summary>Excluir minha conta</summary><p>Apaga perfil, respostas, treinos, sessões e fotos. Nos desafios, suas fotos, legendas e localizações são removidas e seu apelido vira “Ex-participante”. Não dá para desfazer.</p>{error && <p className="tr-alert" role="alert">{error}</p>}<label>Digite EXCLUIR para confirmar<input value={typed} onChange={e => setTyped(e.target.value)} autoCapitalize="characters" autoCorrect="off" /></label><button className="tr-danger" disabled={busy || typed.trim() !== "EXCLUIR"} onClick={remove}>{busy ? "Excluindo…" : "Excluir definitivamente"}</button></details>;
 }

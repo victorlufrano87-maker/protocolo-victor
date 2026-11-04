@@ -23,3 +23,10 @@ test('global unique open activity rolls back the other challenge update atomical
   assert.equal((await db.query('select version from gym_challenges where id=$1',[h])).rows[0].version,1);
   await commit(g,3,current,'end');assert.equal((await commit(h,1,state(h),'start')).rows[0].ok,true);
 });
+
+test('account deletion keeps the group challenge and clears the live activity',async()=>{
+  const migration=await readFile(new URL('../supabase/migrations/20261105_account_deletion.sql',import.meta.url),'utf8');await db.exec(migration);await db.exec(migration);
+  await db.query('delete from auth.users where id=$1',[a]);
+  assert.equal((await db.query('select count(*)::int as n from gym_challenges where created_by is null')).rows[0].n,2);
+  assert.equal((await db.query('select count(*)::int as n from gym_challenge_live')).rows[0].n,0);
+});
