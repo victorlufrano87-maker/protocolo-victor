@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { QUESTIONS, validateProfile, screening, buildPlan, eligibleExercises, validateSession, aiSummary, DAYS } from "../lib/training/domain.mjs";
+import { QUESTIONS, validateProfile, screening, buildPlan, eligibleExercises, validateSession, aiSummary, DAYS, suggestLoad } from "../lib/training/domain.mjs";
 export const healthy = {
   consent: true,
   name: "Amigo",
@@ -201,7 +201,7 @@ const experienced = { ...healthy, experience: 'regular', break: 'none', place: '
 test('experience and schedule choose an actual split with different upper/lower content', () => {
   const plan = buildPlan(experienced);
   assert.equal(plan.division, 'upper_lower');
-  assert.equal(plan.generatorVersion, 4);
+  assert.equal(plan.generatorVersion, 5);
   assert.equal(plan.workouts.filter(w => w.focus === 'upper').length, 2);
   assert.equal(plan.workouts.filter(w => w.focus === 'lower').length, 2);
   for (const w of plan.workouts) {
@@ -287,7 +287,7 @@ test('saved returning/no-break profile gets a conservative split with an explici
 test('long sessions provide more distinct exercises while short sessions and equipment stay bounded', () => {
   const plan = buildPlan({...experienced,experience:'returning',sleep:'low'});
   for (const w of plan.workouts.filter(w => w.kind === 'strength')) {
-    assert.equal(w.exercises.length, w.focus === 'upper' ? 7 : 6);
+    assert.ok(w.exercises.length >= (w.focus === 'upper' ? 7 : 6));
     assert.equal(new Set(w.exercises.map(x => x.id)).size, w.exercises.length);
     assert.ok(w.minutes <= 60);
     assert.ok(w.exercises.every(x => x.sets === 2));
@@ -300,4 +300,31 @@ test('long sessions provide more distinct exercises while short sessions and equ
     assert.equal(new Set(w.exercises.map(x => x.id)).size, w.exercises.length);
     assert.ok(w.exercises.every(x => !x.requires.length));
   }
+});
+
+const gym = { ...healthy, experience: "regular", break: "none", place: "gym", equipment: ["dumbbells", "bench", "machines", "cables", "barbell"], days: ["mon", "wed", "fri"] };
+const shape = plan => JSON.stringify(plan.workouts.map(w => [w.exercises.map(x => [x.id, x.sets, x.reps, x.rest]), w.finisher?.minutes]));
+test("health and fat-loss goals produce different prescriptions and fat loss gets a timed finisher", () => {
+  const fat = buildPlan({ ...gym, goal: "fatloss", minutes: 45 }), health = buildPlan({ ...gym, goal: "health", minutes: 45 });
+  assert.notEqual(shape(fat), shape(health));
+  assert.equal(fat.workouts.find(w => w.kind === "strength").exercises[0].reps, "12–15");
+  assert.equal(health.workouts.find(w => w.kind === "strength").exercises[0].reps, "10–12");
+  assert.ok(fat.workouts.find(w => w.kind === "strength").finisher.minutes >= 6);
+});
+test("60 minutes uses the extra time and every goal still fits the chosen duration", () => {
+  for (const goal of ["muscle", "strength", "fatloss", "health"]) {
+    const a = buildPlan({ ...gym, goal, minutes: 45 }), b = buildPlan({ ...gym, goal, minutes: 60 });
+    assert.notEqual(shape(a), shape(b), goal);
+    for (const [plan, limit] of [[a, 45], [b, 60]]) for (const w of plan.workouts) if (w.kind === "strength") assert.ok(w.minutes <= limit, `${goal} ${w.minutes}>${limit}`);
+  }
+});
+test("load suggestion only increases after the top of the range in every planned set and never after pain", () => {
+  const slot = { sets: 3, reps: "8–12" };
+  assert.equal(suggestLoad([], slot), null);
+  assert.deepEqual([suggestLoad([{ kg: 20, reps: 12 }, { kg: 20, reps: 12 }, { kg: 20, reps: 12 }], slot).kg, suggestLoad([{ kg: 20, reps: 12 }, { kg: 20, reps: 12 }, { kg: 20, reps: 12 }], slot).up], [22, true]);
+  assert.equal(suggestLoad([{ kg: 20, reps: 12 }, { kg: 20, reps: 10 }, { kg: 20, reps: 12 }], slot).kg, 20);
+  assert.equal(suggestLoad([{ kg: 20, reps: 12 }, { kg: 20, reps: 12 }], slot).up, false);
+  assert.equal(suggestLoad([{ kg: 20, reps: 12 }, { kg: 20, reps: 12 }, { kg: 20, reps: 12 }], slot, true).up, false);
+  assert.equal(suggestLoad([{ kg: 8, reps: 15 }, { kg: 8, reps: 15 }, { kg: 8, reps: 15 }], { sets: 3, reps: "10–15" }).kg, 9);
+  assert.equal(suggestLoad([{ kg: 0, reps: 15 }], slot).up, false);
 });
