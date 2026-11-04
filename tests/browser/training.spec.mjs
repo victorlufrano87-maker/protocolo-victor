@@ -335,6 +335,35 @@ test('GYM RATS home shows real account summaries, red identity and working short
   expect(errors).toEqual([]);
 });
 
+test('mobile navigation fits narrow phones and the keyboard does not cover session controls',async({page})=>{
+  const profile={user_id:uid,answers:healthy,updated_at:new Date().toISOString()};
+  const plan={id:'33333333-3333-4333-8333-333333333333',profile_version:profile.updated_at,created_at:profile.updated_at,plan:buildPlan(healthy)};
+  const {errors}=await setup(page,{profile,plan});
+  await page.getByRole('button',{name:'Início',exact:true}).click();
+  for(const width of [360,390,430]){
+    await page.setViewportSize({width,height:780});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    const boxes=await page.locator('.tr-nav button').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {width:r.width,height:r.height,left:r.left,right:r.right};}));
+    expect(boxes).toHaveLength(5);
+    for(const box of boxes){expect(box.width).toBeGreaterThanOrEqual(44);expect(box.height).toBeGreaterThanOrEqual(48);expect(box.left).toBeGreaterThanOrEqual(0);expect(box.right).toBeLessThanOrEqual(width);}
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'Ver evolução →',exact:true}).click();
+  await expect(page.getByRole('heading',{name:/Seu caminho/})).toBeVisible();
+  await page.getByRole('button',{name:'← Início',exact:true}).click();
+  await page.getByRole('button',{name:'Começar meu treino →',exact:true}).click();
+  const reps=page.getByRole('textbox',{name:'Repetições da série 1',exact:true});
+  await reps.fill('10');
+  expect(await reps.evaluate(e=>parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(16);
+  await page.evaluate(()=>{Object.defineProperty(window.visualViewport,'height',{configurable:true,value:300});window.visualViewport.dispatchEvent(new Event('resize'));});
+  await expect(page.locator('html')).toHaveClass(/gr-keyboard/);
+  await expect(page.locator('.tr-session-navigation')).toBeHidden();
+  await page.evaluate(()=>document.activeElement.blur());
+  await expect(page.locator('.tr-session-navigation')).toBeVisible();
+  await expect(reps).toHaveValue('10');
+  expect(errors).toEqual([]);
+});
+
 test("health concern pauses automatic generation after the questionnaire", async ({
   page
 }) => {
