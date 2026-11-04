@@ -199,7 +199,8 @@ test("library search, illustrated explanation, weekly map and per-set targets wo
   const plan = { id: '33333333-3333-4333-8333-333333333333', profile_version: profile.updated_at, created_at: profile.updated_at, plan: buildPlan(healthy) };
   const { errors } = await setup(page, { profile, plan });
   await expect(page.getByRole('heading', { name: 'Músculos da semana' })).toBeVisible();
-  await page.getByRole('button', { name: 'Exercícios', exact: true }).click();
+  await page.getByRole('button', { name: 'Início', exact: true }).click();
+  await page.getByRole('button', { name: /Explorar exercícios Busque por músculo/ }).click();
   await page.getByRole('searchbox').fill('supino');
   await expect(page.locator('.tr-library-grid button').first()).toContainText(/Supino/);
   await page.locator('.tr-library-grid button').first().click();
@@ -322,7 +323,7 @@ test('GYM RATS home shows real account summaries, red identity and working short
   const {errors}=await setup(page,{profile,plan});
   await page.getByRole('button',{name:'Início',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Bora, Rafael.',exact:true})).toBeVisible();
-  await expect(page.locator('.gr-wordmark')).toContainText('GYM RATS');
+  await expect(page.locator('.gr-wordmark')).toContainText('TROPA DO BATATA');
   await expect(page.locator('.gr-stat-grid>div').first()).toContainText('0');
   expect(await page.locator('.training').evaluate(e=>getComputedStyle(e).getPropertyValue('--tr-accent').trim())).toBe('#ff6776');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
