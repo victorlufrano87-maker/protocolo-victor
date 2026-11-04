@@ -201,7 +201,7 @@ const experienced = { ...healthy, experience: 'regular', break: 'none', place: '
 test('experience and schedule choose an actual split with different upper/lower content', () => {
   const plan = buildPlan(experienced);
   assert.equal(plan.division, 'upper_lower');
-  assert.equal(plan.generatorVersion, 3);
+  assert.equal(plan.generatorVersion, 4);
   assert.equal(plan.workouts.filter(w => w.focus === 'upper').length, 2);
   assert.equal(plan.workouts.filter(w => w.focus === 'lower').length, 2);
   for (const w of plan.workouts) {
@@ -282,4 +282,22 @@ test('saved returning/no-break profile gets a conservative split with an explici
   assert.equal(buildPlan({...profile,break:'medium'}).division, 'full_body');
   assert.equal(buildPlan({...profile,break:'long'}).division, 'full_body');
   assert.equal(buildPlan({...profile,experience:'new'}).division, 'full_body');
+});
+
+test('long sessions provide more distinct exercises while short sessions and equipment stay bounded', () => {
+  const plan = buildPlan({...experienced,experience:'returning',sleep:'low'});
+  for (const w of plan.workouts.filter(w => w.kind === 'strength')) {
+    assert.equal(w.exercises.length, w.focus === 'upper' ? 7 : 6);
+    assert.equal(new Set(w.exercises.map(x => x.id)).size, w.exercises.length);
+    assert.ok(w.minutes <= 60);
+    assert.ok(w.exercises.every(x => x.sets === 2));
+    for (const x of w.exercises) for (const alt of x.alternatives) assert.ok(!w.exercises.some(y => y.id === alt));
+  }
+  const short = buildPlan({...experienced,minutes:30});
+  assert.ok(short.workouts.every(w => w.exercises.length <= 5 && w.minutes <= 30));
+  const limited = buildPlan({...healthy,minutes:60});
+  for (const w of limited.workouts) {
+    assert.equal(new Set(w.exercises.map(x => x.id)).size, w.exercises.length);
+    assert.ok(w.exercises.every(x => !x.requires.length));
+  }
 });
