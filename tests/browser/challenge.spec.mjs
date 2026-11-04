@@ -1,18 +1,18 @@
 import {test,expect} from '@playwright/test';
-import {createChallenge,actChallenge,projectChallenge,localDay} from '../../lib/challenge/domain.mjs';
+import {createChallenge,actChallenge,projectChallenge,localDay,GESTURES} from '../../lib/challenge/domain.mjs';
 const uid='22222222-2222-4222-8222-222222222222',peer='33333333-3333-4333-8333-333333333333';
 async function fixture(page,{unavailable=false}={}){
  const now=Date.now(),exp=Math.floor(now/1000)+86400,token=[Buffer.from('{"alg":"HS256"}').toString('base64url'),Buffer.from(JSON.stringify({sub:uid,exp})).toString('base64url'),'test'].join('.');
  await page.addInitScript(({uid,exp,token})=>localStorage.setItem('sb-example-auth-token',JSON.stringify({access_token:token,refresh_token:'test',expires_at:exp,user:{id:uid,email:'test@example.com',user_metadata:{training_pilot:true,training_password_set:true}}})),{uid,exp,token});
  await page.context().grantPermissions(['camera','geolocation']);await page.context().setGeolocation({latitude:-23.5,longitude:-46.6,accuracy:10});
  let s=createChallenge({name:'Tropa de teste',starts:localDay(now),ends:localDay(now+86400000),alias:'Batata'},uid,{id:crypto.randomUUID(),inviteCode:'a'.repeat(36),now});
- s=actChallenge(s,peer,{action:'join',alias:'Amigo',consent:true,operationId:crypto.randomUUID()},{now,id:crypto.randomUUID()});
+ s=actChallenge(s,peer,{action:'join',alias:'Amigo',consent:true,operationId:crypto.randomUUID()},{now,id:crypto.randomUUID()});s=actChallenge(s,uid,{action:'approve',userId:peer,operationId:crypto.randomUUID()},{now,id:crypto.randomUUID()});
  const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/api/training**',r=>r.fulfill({json:{profile:null,plan:null,isOwner:false,sessions:[],photos:[]}}));
  await page.route('**/api/challenges**',async r=>{
   if(unavailable)return r.fulfill({status:503,json:{error:'O desafio precisa ser ativado no banco ou está temporariamente indisponível.'}});
   const body=r.request().method()==='POST'?r.request().postDataJSON():null;
-  if(body){requests.push(body);s=actChallenge(s,uid,{...body,proof:body.photo?{path:'private/test.jpg',hash:'a'.repeat(64)}:undefined},{now:Date.now(),id:crypto.randomUUID(),code:'4827',gesture:'✌️'});}
+  if(body){requests.push(body);s=actChallenge(s,uid,{...body,proof:body.photo?{path:'private/test.jpg',hash:'a'.repeat(64)}:undefined},{now:Date.now(),id:crypto.randomUUID(),code:'4827',gesture:GESTURES[0]});}
   const challenge=projectChallenge(s,uid,Date.now());
   return r.fulfill({json:body||new URL(r.request().url()).searchParams.has('id')?{challenge}:{groups:[{id:s.id,name:s.name,starts:s.starts,ends:s.ends,members:2}]}});
  });
