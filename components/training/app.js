@@ -10,7 +10,7 @@ import { TrainingLogin, SetPassword } from "./auth";
 import { supabase, fmtDay } from "@/lib/supabase";
 import { compress } from "@/lib/photos";
 import { useRestTimer } from "@/lib/use-rest-timer";
-import { QUESTIONS, DAYS, GOALS, CATALOG, GENERATOR_VERSION, validateAnswer, screening } from "@/lib/training/domain.mjs";
+import { QUESTIONS, DAYS, GOALS, CATALOG, GENERATOR_VERSION, validateAnswer, screening, suggestLoad } from "@/lib/training/domain.mjs";
 const messages = {
   config: "Esta área ainda precisa ser ativada na hospedagem.",
   database: "Não consegui acessar o banco de treino. Confira se a atualização foi aplicada.",
@@ -440,6 +440,7 @@ function Session({
     exercise = slot ? CATALOG.find(x => x.id === draft.swaps[slot.id]) || slot : null;
   const lastExercise = [...sessions].sort((a, b) => String(b.completed_at || b.completedAt || b.created_at).localeCompare(String(a.completed_at || a.completedAt || a.created_at))).find(s => s.sets?.some(x => x.exerciseId === exercise?.id));
   const lastSets = lastExercise?.sets.filter(x => x.exerciseId === exercise?.id) || [];
+  const suggestion = suggestLoad(lastSets, slot, lastExercise?.feedback?.pain === true);
   function setDone(i, reps, kg) {
     if (!reps || !Number.isFinite(+reps) || +reps < 1 || !Number.isFinite(+kg) || +kg < 0 || +kg > 500 || +reps > 100) {
       setError("Preencha repetições e carga. Para peso do corpo, use 0 kg.");
@@ -502,7 +503,7 @@ function Session({
       }}>Guardar minha sessão</button>{workout.kind === "strength" && <button onClick={() => setReview(false)}>Voltar aos exercícios</button>}</section> : <><div className="tr-exercise-heading"><span className="tr-eyebrow">EXERCÍCIO {index + 1} DE {workout.exercises.length}</span><h1>{exercise.name}</h1></div>
   <section className="tr-prescription tr-prescription-compact"><div><span>SÉRIES</span><b>{slot.sets}</b></div><div><span>REPETIÇÕES</span><b>{slot.reps}</b></div><div><span>DESCANSO</span><b>{slot.rest}s</b></div><p>{slot.sets} séries de {slot.reps} repetições · termine com {slot.rir} repetições de reserva.</p></section>
   <ExerciseGuide key={exercise.id} exercise={exercise} />
-  <section className="tr-technique"><ol>{exercise.cues.map((c,i) => <li key={c}><span>{i+1}</span>{c}</li>)}</ol><p className="tr-small">Movimento controlado, sem prender a respiração. Se sentir dor, pare.</p><details><summary>Aquecimento e escolha da carga</summary><p>{workout.warmup}</p><p>Use uma carga que permita completar a faixa mantendo a técnica. Para peso do corpo, registre 0 kg.</p></details>
+  <section className="tr-technique"><ol>{exercise.cues.map((c,i) => <li key={c}><span>{i+1}</span>{c}</li>)}</ol><p className="tr-small">Movimento controlado, sem prender a respiração. Se sentir dor, pare.</p><details><summary>Aquecimento e escolha da carga</summary><p>{workout.warmup}</p>{workout.finisher && <p><b>{workout.finisher.text}</b></p>}<p>Use uma carga que permita completar a faixa mantendo a técnica. Para peso do corpo, registre 0 kg.</p></details>
 {slot.alternatives.length > 0 && <label>Precisa de uma alternativa?<select value={exercise.id} onChange={e => {
             if (draft.sets.some(s => s.slotId === slot.id)) {
               setError("Para manter seu registro consistente, escolha a alternativa antes de registrar as séries deste exercício.");
@@ -515,7 +516,7 @@ function Session({
                 [slot.id]: e.target.value
               }
             });
-          }}>{[slot.id, ...slot.alternatives].map(id => <option key={id} value={id}>{CATALOG.find(x => x.id === id)?.name}</option>)}</select></label>}</section><section className="tr-record"><div className="tr-row"><h2>Suas séries</h2><span>{draft.sets.filter(s => s.slotId === slot.id).length}/{slot.sets} registradas</span></div>{lastSets.length > 0 && <p className="tr-last-record">Último registro: {lastSets.map(s => `${s.reps} reps × ${s.kg} kg`).join(" · ")}</p>}<div className="tr-sets">{Array.from({
+          }}>{[slot.id, ...slot.alternatives].map(id => <option key={id} value={id}>{CATALOG.find(x => x.id === id)?.name}</option>)}</select></label>}</section><section className="tr-record"><div className="tr-row"><h2>Suas séries</h2><span>{draft.sets.filter(s => s.slotId === slot.id).length}/{slot.sets} registradas</span></div>{lastSets.length > 0 && <p className="tr-last-record">Último registro: {lastSets.map(s => `${s.reps} reps × ${s.kg} kg`).join(" · ")}</p>}{suggestion && <p className="tr-small" role="note"><b>{suggestion.up ? "↑ Sugestão hoje: " : "Sugestão hoje: "}{suggestion.kg} kg.</b> {suggestion.reason}</p>}<div className="tr-sets">{Array.from({
           length: slot.sets
         }, (_, i) => <SetRow key={`${exercise.id}:${i}`} number={i + 1} target={slot.reps} initial={draft.sets.find(s => s.slotId === slot.id && s.index === i)} onDone={(r, k) => setDone(i, r, k)} />)}</div></section><div className="tr-session-navigation"><button disabled={index === 0} onClick={() => { setIndex(index - 1); window.scrollTo(0,0); }}>← Anterior</button><button className="tr-primary" onClick={() => { if(index === workout.exercises.length - 1) setReview(true); else setIndex(index + 1); window.scrollTo(0,0); }}>{index === workout.exercises.length - 1 ? "Revisar e concluir" : "Próximo exercício →"}</button></div><button className="tr-text-button" onClick={() => setReview(true)}>Encerrar e registrar sessão parcial</button></>}{error && <p className="tr-alert" role="alert">{error}</p>}</main>;
 }

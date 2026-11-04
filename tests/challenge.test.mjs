@@ -100,3 +100,12 @@ test('forgetting a member removes photos, captions, locations and transfers the 
   assert.ok(state.members.some(m=>m.alias==='Ex-participante 1'));
   assert.equal(state.audit.slice(0,s.audit.length).length,s.audit.length);
 });
+
+test('contest window restarts at peer review so late reviews can still be challenged',()=>{
+  let s=submitted();const later=T+1801000+30*3600000;
+  s=apply(s,users[1],{action:'review',entryId:s.entries[0].id,reason:'Código e gesto conferidos na foto.'},later);
+  assert.equal(s.entries[0].reviewedBy,users[1]);
+  const contested=apply(s,users[2],{action:'contest',entryId:s.entries[0].id,reason:'O código não aparece visível nesta foto.'},later+3600000);
+  assert.equal(contested.entries[0].status,'contested');
+  assert.throws(()=>apply(s,users[2],{action:'contest',entryId:s.entries[0].id,reason:'O código não aparece visível nesta foto.'},later+25*3600000));
+});
