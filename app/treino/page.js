@@ -1,14 +1,14 @@
 import TrainingApp from "@/components/training/app";
 import "./training.css";
 export const metadata = {
-  title: "Seu treino · Protocolo",
+  title: "GYM RATS · Seu treino",
   robots: {
     index: false
   },
   manifest: "/training-manifest.json",
   appleWebApp: {
     capable: true,
-    title: "Meu treino",
+    title: "GYM RATS",
     statusBarStyle: "black-translucent"
   }
 };

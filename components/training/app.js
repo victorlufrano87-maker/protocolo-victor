@@ -1,4 +1,6 @@
 "use client";
+import Cardio from "./cardio";
+import TrainingHome from "./home";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TrainingLibrary, TrainingMuscles, ExerciseGuide } from "./exercises";
@@ -71,7 +73,7 @@ export default function TrainingApp() {
   return <TrainingSpace key={session.user.id} uid={session.user.id} />;
 }
 function Brand() {
-  return <header className="tr-brand"><span className="tr-mark">↗</span><span>PROTOCOLO<span className="tr-small">TREINO PESSOAL</span></span><span className="tr-beta">PILOTO</span></header>;
+  return <header className="tr-brand"><span className="tr-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M5 10v12m5-15v18m12-18v18m5-15v12M10 16h12"/></svg></span><span className="gr-wordmark">GYM <b>RATS</b><span className="tr-small">SEU RITMO. SUA EVOLUÇÃO.</span></span><span className="tr-beta">BETA</span></header>;
 }
 function TrainingSpace({
   uid
@@ -81,7 +83,7 @@ function TrainingSpace({
     [busy, setBusy] = useState(false),
     [offline, setOffline] = useState(false),
     [pending, setPending] = useState([]),
-    [tab, setTab] = useState("plan"),
+    [tab, setTab] = useState("home"),
     [mode, setMode] = useState("dashboard"),
     [active, setActive] = useState(null);
   const flight = useRef(null),
@@ -142,6 +144,7 @@ function TrainingSpace({
         plan: r.plan
       }));
       setMode("dashboard");
+      setTab("plan");
       await load();
     } catch (e) {
       setError(e.message);
@@ -170,16 +173,18 @@ function TrainingSpace({
     const next = [...read(queueKey, []).filter(s => s.id !== record.id), {
       ...record,
       created_at: new Date().toISOString(),
-      completedAt: new Date().toISOString()
+      completedAt: record.completedAt || new Date().toISOString()
     }];
     try {
       localStorage.setItem(queueKey, JSON.stringify(next));
       setPending(next);
       setActive(null);
-      localStorage.removeItem(`training_session_${uid}`);
+      if (!record.workoutId.startsWith("cardio-")) localStorage.removeItem(`training_session_${uid}`);
       flush();
+      return true;
     } catch {
       setError("O celular está sem espaço para guardar a sessão. Libere espaço e tente concluir novamente.");
+      return false;
     }
   }
   const allSessions = [...new Map([...(data?.sessions || []), ...pending].map(s => [s.id, s])).values()].sort((a, b) => new Date(b.completed_at || b.completedAt || b.created_at) - new Date(a.completed_at || a.completedAt || a.created_at));
@@ -188,26 +193,29 @@ function TrainingSpace({
     gate = profile ? screening(profile) : null,
     hasPain = allSessions.some(s => s.feedback?.pain),
     stale = data.plan && new Date(data.plan.profile_version).getTime() !== new Date(data.profile?.updated_at).getTime();
+  const startWorkout = w => {
+        const old = read(`training_session_${uid}`, null);
+        if (old?.sets?.length && old.workoutId !== w.id && !confirm("Existe uma sessão pausada neste aparelho. Deseja descartar o rascunho dela e iniciar este treino?")) return;
+        setActive(w);
+      };
   if (active) return <Session uid={uid} sessions={allSessions} plan={data.plan} workout={active} onClose={() => setActive(null)} onComplete={completed} />;
   if (mode === "wizard") return <main className="training"><Brand />{error && <p className="tr-alert" role="alert">{error}</p>}<Wizard uid={uid} initial={profile} busy={busy} onSave={profileSaved} onExit={() => setMode("dashboard")} /></main>;
   if (mode === "photo") return <main className="training"><Brand /><PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} /><button className="tr-primary" disabled={busy} onClick={generate}>{busy ? "Preparando sua proposta…" : "Continuar e montar meu treino"}</button>{error && <p role="alert">{error}</p>}</main>;
   return <main className="training"><Brand /><div className="tr-topline"><span>{profile ? `Olá, ${profile.name.split(" ")[0]}` : "BEM-VINDO AO SEU ESPAÇO"}</span><span className="tr-small" role="status">{pending.length ? `${pending.length} sessão(ões) aguardando envio` : offline ? "Modo offline" : "Conectado"}</span></div>{error && <p className="tr-alert" role="alert">{error}</p>}
+ {tab === "home" && <TrainingHome profile={profile} record={data.plan} sessions={allSessions} ready={!!gate?.ready && !hasPain && !stale} onStart={startWorkout} onNavigate={key => { setTab(key); window.scrollTo(0,0); }} onSetup={() => setMode("wizard")} onGenerate={generate} busy={busy} />}
  {tab === "plan" && <>
  <section className="tr-card"><h2>Qual músculo quer consultar?</h2><p>Veja os exercícios por grupo muscular e por parte do músculo.</p><button onClick={() => { setTab("exercises"); window.scrollTo(0, 0); }}>Explorar exercícios por músculo →</button></section>
- {!profile ? <><div className="tr-hero"><span className="tr-eyebrow">COMECE PELO QUE IMPORTA</span><h1>Seu treino começa<br />com você.</h1><p>Objetivo, rotina e equipamentos. Algumas perguntas para criar uma proposta possível de manter.</p></div><div className="tr-metrics"><span><b>{QUESTIONS.length}</b>perguntas curtas</span><span><b>1</b>passo por vez</span><span><b>Você</b>no controle</span></div><button className="tr-primary" onClick={() => setMode("wizard")}>Montar meu primeiro treino →</button><p className="tr-small">Foto opcional. Suas respostas ficam separadas das de outras pessoas.</p></> : !gate.ready || hasPain ? <section className="tr-card tr-caution"><span className="tr-eyebrow">ANTES DO PRÓXIMO TREINO</span><h1>Vamos cuidar da base.</h1><p>{hasPain ? "Você registrou dor em uma sessão. Pause os exercícios dolorosos e busque orientação profissional antes de continuar uma rotina automática." : gate.message}</p><p className="tr-small">Se tiver agora dor no peito, desmaio ou falta de ar intensa, interrompa o esforço e procure atendimento imediato.</p><button onClick={() => setMode("wizard")}>Revisar minhas respostas</button></section> : !data.plan || stale ? <section className="tr-card"><h1>Suas respostas estão prontas.</h1><p>{stale ? "Você atualizou seu perfil. Gere uma proposta compatível antes de iniciar outra sessão." : "Agora podemos montar sua proposta inicial."}</p><button className="tr-primary" disabled={busy || offline} onClick={generate}>{busy ? "Montando…" : "Montar meu treino"}</button><button onClick={() => setMode("wizard")}>Revisar respostas</button></section> : <PlanView record={data.plan} profile={profile} sessions={allSessions} busy={busy} onGenerate={generate} onStart={w => {
-        const old = read(`training_session_${uid}`, null);
-        if (old?.sets?.length && old.workoutId !== w.id && !confirm("Existe uma sessão pausada neste aparelho. Deseja descartar o rascunho dela e iniciar este treino?")) return;
-        setActive(w);
-      }} />}
+ {!profile ? <><div className="tr-hero"><span className="tr-eyebrow">COMECE PELO QUE IMPORTA</span><h1>Seu treino começa<br />com você.</h1><p>Objetivo, rotina e equipamentos. Algumas perguntas para criar uma proposta possível de manter.</p></div><div className="tr-metrics"><span><b>{QUESTIONS.length}</b>perguntas curtas</span><span><b>1</b>passo por vez</span><span><b>Você</b>no controle</span></div><button className="tr-primary" onClick={() => setMode("wizard")}>Montar meu primeiro treino →</button><p className="tr-small">Foto opcional. Suas respostas ficam separadas das de outras pessoas.</p></> : !gate.ready || hasPain ? <section className="tr-card tr-caution"><span className="tr-eyebrow">ANTES DO PRÓXIMO TREINO</span><h1>Vamos cuidar da base.</h1><p>{hasPain ? "Você registrou dor em uma sessão. Pause os exercícios dolorosos e busque orientação profissional antes de continuar uma rotina automática." : gate.message}</p><p className="tr-small">Se tiver agora dor no peito, desmaio ou falta de ar intensa, interrompa o esforço e procure atendimento imediato.</p><button onClick={() => setMode("wizard")}>Revisar minhas respostas</button></section> : !data.plan || stale ? <section className="tr-card"><h1>Suas respostas estão prontas.</h1><p>{stale ? "Você atualizou seu perfil. Gere uma proposta compatível antes de iniciar outra sessão." : "Agora podemos montar sua proposta inicial."}</p><button className="tr-primary" disabled={busy || offline} onClick={generate}>{busy ? "Montando…" : "Montar meu treino"}</button><button onClick={() => setMode("wizard")}>Revisar respostas</button></section> : <PlanView record={data.plan} profile={profile} sessions={allSessions} busy={busy} onGenerate={generate} onStart={startWorkout} />}
  </>}
+ {tab === "cardio" && (!profile || !gate?.ready || hasPain || !data.plan || stale ? <section className="tr-card"><h1>Antes do cardio</h1><p>Preencha ou revise seu perfil e mantenha uma proposta atualizada. Se relatou dor, busque orientação antes de iniciar outra rotina automática.</p><button onClick={() => setTab("plan")}>Voltar ao treino</button></section> : <Cardio uid={uid} plan={{...data.plan,profile_snapshot:profile}} onComplete={completed} />)}
  {tab === "exercises" && <TrainingLibrary />}
- {tab === "progress" && <><div className="tr-hero"><span className="tr-eyebrow">CONSISTÊNCIA, UM DIA POR VEZ</span><h1>Seu caminho<br />até aqui.</h1></div><div className="tr-metrics"><span><b>{allSessions.length}</b>sessões registradas</span><span><b>{allSessions[0]?.feedback?.effort || "—"}</b>último esforço /10</span></div>{!allSessions.length && <p>Seu primeiro registro aparece aqui depois do treino.</p>}{allSessions.map(s => <article className="tr-card" key={s.id}><div className="tr-row"><b>{date(s.completed_at || s.completedAt || s.created_at)}</b><span className="tr-tag">{pending.some(x => x.id === s.id) ? "No celular" : "Sincronizado"}</span></div><p>{s.sets.length} séries · esforço {s.feedback.effort}/10 · {s.feedback.pain ? "Dor relatada — avaliação necessária" : "Sem dor relatada"}</p></article>)}{profile && <PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} />}</>}
+ {tab === "progress" && <><div className="tr-hero"><span className="tr-eyebrow">CONSISTÊNCIA, UM DIA POR VEZ</span><h1>Seu caminho<br />até aqui.</h1></div><div className="tr-metrics"><span><b>{allSessions.length}</b>sessões registradas</span><span><b>{allSessions[0]?.feedback?.effort || "—"}</b>último esforço /10</span></div>{!allSessions.length && <p>Seu primeiro registro aparece aqui depois do treino.</p>}{allSessions.map(s => <article className="tr-card" key={s.id}><div className="tr-row"><b>{date(s.completed_at || s.completedAt || s.created_at)}</b><span className="tr-tag">{pending.some(x => x.id === s.id) ? "No celular" : "Sincronizado"}</span></div><p>{s.feedback?.cardio ? `${Math.floor(s.feedback.cardio.elapsedSeconds / 60)} min de cardio${s.feedback.cardio.partial ? " · parcial" : ""}` : `${s.sets.length} séries`} · esforço {s.feedback.effort}/10 · {s.feedback.pain ? "Dor relatada — avaliação necessária" : "Sem dor relatada"}</p></article>)}{profile && <PhotoPanel uid={uid} profile={profile} photos={data.photos} onChange={load} />}</>}
  {tab === "account" && <><h1>Seu espaço.</h1><section className="tr-card"><h2>Seu perfil</h2><p>{profile ? `${profile.name} · ${profile.age} anos` : "Seu perfil ainda não foi preenchido."}</p><button onClick={() => setMode("wizard")}>Revisar perguntas e preferências</button><p className="tr-small">Ao salvar novas respostas, a proposta anterior fica desatualizada. Suas sessões anteriores continuam no histórico.</p></section><section className="tr-card"><h2>Privacidade e limites</h2><p>A foto é opcional, privada dentro do aplicativo e não é enviada à IA. Não estimamos gordura nem diagnosticamos condições pela imagem.</p><p>O responsável técnico pelo banco pode administrar os arquivos. Evite mostrar o rosto ou outras pessoas.</p><p>O plano é uma proposta inicial de treino, não uma avaliação presencial. Técnica, sintomas e recuperação importam mais que uma meta de carga.</p><p className="tr-small">Você pode excluir fotos na área Evolução. Respostas e registros ficam na sua conta.</p></section><button onClick={() => supabase.auth.signOut()}>Sair da conta</button>{data.isOwner && <a className="tr-link" href="/">Voltar ao meu aplicativo pessoal</a>}</>}
  {tab === "invites" && data.isOwner && <Invites />}
- <nav className="tr-nav">{[["plan", "Treino"], ["exercises", "Exercícios"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Clientes"]] : [])].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => {
+ <nav className="tr-nav">{[["home", "Início"], ["plan", "Treino"], ["cardio", "Cardio"], ["exercises", "Exercícios"], ["progress", "Evolução"], ["account", "Conta"], ...(data.isOwner ? [["invites", "Clientes"]] : [])].map(([key, label]) => <button key={key} aria-label={label} className={tab === key ? "on" : ""} onClick={() => {
         setTab(key);
         window.scrollTo(0, 0);
-      }}>{label}</button>)}</nav>
+      }}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={({home:"M3 10 12 3l9 7v10H3z M9 20v-7h6v7",plan:"M3 8v8m4-11v14m10-14v14m4-11v8M7 12h10",cardio:"M2 12h5l3-7 4 14 3-7h5",exercises:"M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14z m5-2 6 6",progress:"M4 20V10m8 10V4m8 16v-7M2 21h20",account:"M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0M4 22v-3c0-6 16-6 16 0v3",invites:"M7 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M1 21v-3c0-6 12-6 12 0v3m4-15h6m-3-3v6"})[key]}/></svg><span>{label}</span></button>)}</nav>
  </main>;
 }
 function Wizard({

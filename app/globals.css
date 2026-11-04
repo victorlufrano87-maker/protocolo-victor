@@ -1,6 +1,6 @@
 :root{
-  --bg:#0c1219;--card:#151e28;--card2:#1b2633;--fg:#e8eef5;--mute:#8b9aab;--line:#243241;
-  --accent:#5c8cff;--accent-soft:#1a2a4d;--ok:#2fd08f;--ok-soft:#123a2b;--warn:#ffae3d;--bad:#ff6b6b;
+  --bg:#09090b;--card:#141416;--card2:#202023;--fg:#f6f4f5;--mute:#a5a0a5;--line:#303034;
+  --accent:#ef4357;--accent-soft:#3b1520;--ok:#2fd08f;--ok-soft:#123a2b;--warn:#ffae3d;--bad:#ff6b6b;
   --display:"Barlow Condensed",Impact,sans-serif;--body:"Figtree",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;
   color-scheme:dark;
 }

@@ -121,6 +121,7 @@ async function setup(page, {
   await expect(page.getByText("Conectado", {
     exact: true
   })).toBeVisible();
+  await page.getByRole('button',{name:'Treino',exact:true}).click();
   return {
     state,
     errors
@@ -267,6 +268,70 @@ test('guided session records a set, controls rest and navigates its exercise lis
   await expect(page.getByRole('textbox',{name:'Repetições da série 1',exact:true})).toHaveValue('10');
   await expect(page.getByRole('progressbar',{name:'Progresso do treino'})).toHaveAttribute('value','1');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('cardio intervals catch up, pause, survive reload and synchronize a partial activity offline', async ({page}) => {
+  await page.addInitScript(()=>{window.__cardioSpoken=[];Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{cancel(){},speak(msg){window.__cardioSpoken.push(msg.text);}}});window.SpeechSynthesisUtterance=class{constructor(text){this.text=text;}};});
+  const answers={...healthy,avoid:[]};
+  const profile={user_id:uid,answers,updated_at:new Date().toISOString()};
+  const plan={id:'33333333-3333-4333-8333-333333333333',profile_version:profile.updated_at,created_at:profile.updated_at,profile_snapshot:answers,plan:buildPlan(answers)};
+  const {state,errors}=await setup(page,{profile,plan});
+  await page.clock.install();
+  await page.getByRole('button',{name:'Cardio',exact:true}).click();
+  await page.getByRole('button',{name:/Corrida \+ caminhada/}).click();
+  await page.getByLabel('Minutos correndo',{exact:true}).fill('10');
+  await page.getByLabel('Avisos por voz',{exact:true}).check();
+  await page.getByRole('button',{name:'Começar cardio',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Aquecimento',exact:true})).toBeVisible();
+  await page.clock.fastForward(181000);
+  await expect(page.getByRole('heading',{name:'Corrida',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>window.__cardioSpoken.some(s=>s.startsWith('Corrida.')))).toBe(true);
+  await page.getByRole('button',{name:'Pausar cardio',exact:true}).click();
+  const before=await page.locator('.tr-cardio-timer strong').innerText();
+  await page.clock.fastForward(60000);
+  await expect(page.locator('.tr-cardio-timer strong')).toHaveText(before);
+  await page.reload();
+  await page.getByRole('button',{name:'Cardio',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Retomar cardio',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Encerrar atividade',exact:true}).click();
+  state.offline=true;
+  await page.getByRole('button',{name:'Salvar cardio',exact:true}).click();
+  await expect(page.getByText('1 sessão(ões) aguardando envio',{exact:true})).toBeVisible();
+  state.offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await expect.poll(()=>state.sessions.length).toBe(1);
+  expect(state.sessions[0].feedback.cardio.elapsedSeconds).toBeGreaterThanOrEqual(180);
+  expect(state.sessions[0].sets).toEqual([]);expect(errors).toEqual([]);
+});
+
+test('avoiding impact hides running choices without hiding walking or bicycle', async ({page})=>{
+  const answers={...healthy,avoid:['impact']};
+  const profile={user_id:uid,answers,updated_at:new Date().toISOString()};
+  const plan={id:'33333333-3333-4333-8333-333333333333',profile_version:profile.updated_at,created_at:profile.updated_at,plan:buildPlan(answers)};
+  await setup(page,{profile,plan});
+  await page.getByRole('button',{name:'Cardio',exact:true}).click();
+  await expect(page.getByRole('button',{name:/Corrida \+ caminhada/})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/Corrida contínua/})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/Bicicleta/})).toBeVisible();
+  await page.screenshot({path:'test-results/cardio-options.png',fullPage:true});
+});
+
+test('GYM RATS home shows real account summaries, red identity and working shortcuts on mobile',async({page})=>{
+  const profile={user_id:uid,answers:healthy,updated_at:new Date().toISOString()};
+  const plan={id:'33333333-3333-4333-8333-333333333333',profile_version:profile.updated_at,created_at:profile.updated_at,plan:buildPlan(healthy)};
+  const {errors}=await setup(page,{profile,plan});
+  await page.getByRole('button',{name:'Início',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Bora, Rafael.',exact:true})).toBeVisible();
+  await expect(page.locator('.gr-wordmark')).toContainText('GYM RATS');
+  await expect(page.locator('.gr-stat-grid>div').first()).toContainText('0');
+  expect(await page.locator('.training').evaluate(e=>getComputedStyle(e).getPropertyValue('--tr-accent').trim())).toBe('#ff6776');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'test-results/gym-rats-home-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:/Explorar exercícios Busque por músculo/}).click();
+  await expect(page.getByRole('heading',{name:'Exercícios.',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Início',exact:true}).click();
+  await page.getByRole('button',{name:'Começar meu treino →',exact:true}).click();
+  await expect(page.getByRole('progressbar',{name:'Progresso do treino'})).toBeVisible();
   expect(errors).toEqual([]);
 });
 
