@@ -1,12 +1,12 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Protocolo Victor",
+  title: "GYM RATS",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, title: "Protocolo", statusBarStyle: "black-translucent" },
-  icons: { apple: "/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "GYM RATS", statusBarStyle: "black-translucent" },
+  icons: { icon: "/gym-rats-icon.svg", apple: "/gym-rats-180.png" },
 };
-export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#0c1219" };
+export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#09090b" };
 
 export default function RootLayout({ children }) {
   return (

@@ -41,7 +41,7 @@ function Login() {
   }
   return (
     <div className="wrap" style={{ paddingTop: 40 }}>
-      <h1>Protocolo Victor</h1>
+      <h1>GYM RATS</h1>
       <div className="card">
         <input id="email" type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
         <input id="pass" type="password" placeholder="Senha" value={pass} onChange={(e) => setPass(e.target.value)} />
@@ -186,7 +186,7 @@ function App({ uid }) {
             <span className="lbl">{fmtDay(day, { weekday: "long", day: "2-digit", month: "long" })}</span>
             {viewDay && <button aria-label="Próximo dia" onClick={() => { const n = addDays(day, 1); setViewDay(n >= today ? null : n); }}>›</button>}
           </div>
-          <h1>Protocolo Victor</h1>
+          <h1>GYM RATS</h1>
           <a href="/treino" className="tag">Treino personalizado e convites →</a>
           <div className="tag">{s === 100 ? "Dia 100% cumprido" : `Dia ${Math.max(1, Math.round((new Date(day + "T12:00:00Z") - new Date((settings.times?.start || "2026-10-09") + "T12:00:00Z")) / 864e5) + 1)} do protocolo · ~1.990 kcal · 199 g PTN`}</div>
         </div>

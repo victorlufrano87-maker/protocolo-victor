@@ -32,11 +32,11 @@ export async function POST(req) {
       ignoreDuplicates: true
     }).select("*"));
     let adjusted = false;
-    if (!session.feedback.pain && !session.feedback.profileChanged) {
+    if (!session.feedback.cardio && !session.feedback.pain && !session.feedback.profileChanged) {
       const count = check(await db.from("training_sessions").select("id", {
         count: "exact",
         head: false
-      }).eq("user_id", uid).eq("plan_id", plan.id));
+      }).eq("user_id", uid).eq("plan_id", plan.id).like("workout_id", "strength-%"));
       if (count?.length >= 3 && Date.now() - new Date(plan.created_at).getTime() >= 60000) {
         try {
           await generateTraining(db, uid);
